@@ -41,6 +41,34 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 The bridge runs on `http://localhost:8000` and proxies requests to OpenClaw.
 
+## OpenClaw Gateway Configuration
+
+Make sure your `~/.openclaw/openclaw.json` includes the following `gateway.http` block:
+
+```json
+"gateway": {
+  "mode": "local",
+  "controlUi": {
+    "dangerouslyDisableDeviceAuth": true,
+    "allowedOrigins": [
+      "..."
+    ]
+  },
+  "http": {
+    "endpoints": {
+      "chatCompletions": {
+        "enabled": true
+      },
+      "responses": {
+        "enabled": true
+      }
+    }
+  }
+}
+```
+
+> **Important:** The `http.endpoints` section above is essential. You must explicitly enable `chatCompletions` and `responses` — without these, the OpenClaw HTTP API endpoints will not be available and the bridge will fail to connect.
+
 ## Project Structure
 
 ```
