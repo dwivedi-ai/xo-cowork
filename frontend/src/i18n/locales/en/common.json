@@ -52,5 +52,17 @@
   "remote": "Remote",
   "setupProvider": "Set up provider",
   "setUpProvider": "Set up provider",
-  "apiKey": "API Key"
+  "apiKey": "API Key",
+  "noAgentsFound": "No agents found",
+  "agents": "Agents",
+  "addAgent": "Add agent",
+  "addAgentTitle": "Add OpenClaw agent",
+  "addAgentDescription": "Registers the agent in OpenClaw (openclaw.json, workspace, and session store on disk).",
+  "agentDisplayName": "Display name",
+  "agentIdOptional": "Agent id (optional)",
+  "agentIdHint": "Lowercase letters, numbers, and hyphens. If empty, an id is derived from the display name.",
+  "descriptionOptional": "Description (optional)",
+  "createAgent": "Create",
+  "agentCreated": "Agent created",
+  "agentCreateFailed": "Failed to create agent"
 }

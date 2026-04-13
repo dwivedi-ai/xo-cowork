@@ -169,6 +169,7 @@ export const API = {
     OPEN_SYSTEM: "/api/files/open-system",
     SEARCH: "/api/files/search",
     INGEST: "/api/files/ingest",
+    MKDIR: "/api/files/mkdir",
   },
   ARTIFACTS: {
     EXPORT_PDF: "/api/artifacts/export-pdf",

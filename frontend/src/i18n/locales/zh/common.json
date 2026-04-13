@@ -52,5 +52,17 @@
   "remote": "远程",
   "setupProvider": "配置服务商",
   "setUpProvider": "配置服务商",
-  "apiKey": "API 密钥"
+  "apiKey": "API 密钥",
+  "noAgentsFound": "暂无智能体",
+  "agents": "智能体",
+  "addAgent": "添加智能体",
+  "addAgentTitle": "添加 OpenClaw 智能体",
+  "addAgentDescription": "在 OpenClaw 中注册该智能体（写入 openclaw.json、工作区与会话目录）。",
+  "agentDisplayName": "显示名称",
+  "agentIdOptional": "智能体 ID（可选）",
+  "agentIdHint": "小写字母、数字与连字符。留空则根据显示名称自动生成。",
+  "descriptionOptional": "描述（可选）",
+  "createAgent": "创建",
+  "agentCreated": "智能体已创建",
+  "agentCreateFailed": "创建智能体失败"
 }

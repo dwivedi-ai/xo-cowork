@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   FolderClosed,
   FolderOpen,
@@ -11,7 +11,11 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  FolderPlus,
+  Check,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { API } from "@/lib/constants";
@@ -147,10 +151,30 @@ function FileNode({ name, path, depth }: FileNodeProps) {
   );
 }
 
+const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+
 export function ProjectExplorer() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [rootData, setRootData] = useState<{ dirs: DirEntry[]; files: DirEntry[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const loadRoot = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
+        path: WORKSPACE_ROOT,
+      });
+      setRootData({ dirs: res.dirs, files: res.files });
+    } catch {
+      setRootData({ dirs: [], files: [] });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const toggle = useCallback(async () => {
     if (isExpanded) {
@@ -158,20 +182,44 @@ export function ProjectExplorer() {
       return;
     }
     if (!rootData) {
-      setLoading(true);
-      try {
-        const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
-          path: "/home/coder/.openclaw/workspace",
-        });
-        setRootData({ dirs: res.dirs, files: res.files });
-      } catch {
-        setRootData({ dirs: [], files: [] });
-      } finally {
-        setLoading(false);
-      }
+      await loadRoot();
     }
     setIsExpanded(true);
-  }, [isExpanded, rootData]);
+  }, [isExpanded, rootData, loadRoot]);
+
+  const openNewFolder = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFolderName("");
+    setAddingFolder(true);
+  }, []);
+
+  const cancelNewFolder = useCallback(() => {
+    setAddingFolder(false);
+    setFolderName("");
+  }, []);
+
+  const confirmNewFolder = useCallback(async () => {
+    const name = folderName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      await api.post(API.FILES.MKDIR, { path: `${WORKSPACE_ROOT}/${name}` });
+      setAddingFolder(false);
+      setFolderName("");
+      await loadRoot();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create folder";
+      toast.error(msg);
+    } finally {
+      setCreating(false);
+    }
+  }, [folderName, loadRoot]);
+
+  useEffect(() => {
+    if (addingFolder) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [addingFolder]);
 
   return (
     <div className="px-2 pb-1">
@@ -199,7 +247,60 @@ export function ProjectExplorer() {
 
       {isExpanded && rootData && (
         <div className="mt-1 max-h-[280px] overflow-y-auto scrollbar-thin">
-          {rootData.dirs.length === 0 && rootData.files.length === 0 ? (
+          {/* New folder button */}
+          <div className="flex justify-end px-1 pb-1">
+            <button
+              type="button"
+              onClick={openNewFolder}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] transition-colors"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              New folder
+            </button>
+          </div>
+
+          {/* Inline new-folder input */}
+          {addingFolder && (
+            <div className="flex items-center gap-1 px-2 pb-1.5">
+              <FolderClosed className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+              <input
+                ref={inputRef}
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void confirmNewFolder();
+                  if (e.key === "Escape") cancelNewFolder();
+                }}
+                placeholder="Folder name"
+                className={cn(
+                  "flex-1 min-w-0 bg-[var(--surface-secondary)] text-[13px] text-[var(--text-primary)]",
+                  "border border-[var(--border-focus)] rounded-md px-2 py-0.5 outline-none",
+                  "placeholder:text-[var(--text-quaternary)]",
+                )}
+              />
+              <button
+                type="button"
+                onClick={() => void confirmNewFolder()}
+                disabled={!folderName.trim() || creating}
+                className="text-[var(--text-tertiary)] hover:text-[var(--brand-primary)] disabled:opacity-40 transition-colors"
+              >
+                {creating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={cancelNewFolder}
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          {rootData.dirs.length === 0 && rootData.files.length === 0 && !addingFolder ? (
             <p className="px-3 py-2 text-[11px] text-[var(--text-tertiary)]">Empty directory</p>
           ) : (
             <>

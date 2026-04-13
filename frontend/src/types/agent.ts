@@ -19,3 +19,11 @@ export interface AgentInfo {
   temperature?: number | null;
   metadata: Record<string, unknown>;
 }
+
+/** POST /api/agents — OpenClaw bridge */
+export interface CreateAgentRequest {
+  name: string;
+  id?: string;
+  description?: string;
+  workspace?: string;
+}
