@@ -15,6 +15,8 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { API } from "@/lib/constants";
+import { useArtifactStore } from "@/stores/artifact-store";
+import { artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
 
 interface DirEntry {
   name: string;
@@ -115,19 +117,33 @@ interface FileNodeProps {
   depth: number;
 }
 
-function FileNode({ name, depth }: FileNodeProps) {
+function FileNode({ name, path, depth }: FileNodeProps) {
   const Icon = fileIcon(name);
+
+  const handleClick = () => {
+    const type = artifactTypeFromExtension(path) ?? "file-preview";
+    useArtifactStore.getState().openArtifact({
+      id: `project-${path}`,
+      type,
+      title: name,
+      content: "",
+      filePath: path,
+      language: languageFromExtension(path),
+    });
+  };
+
   return (
-    <div
+    <button
+      onClick={handleClick}
       className={cn(
-        "flex items-center gap-1.5 py-1 text-[16px] text-[var(--text-tertiary)]",
-        "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-md transition-colors cursor-default",
+        "flex items-center gap-1.5 w-full py-1 text-[16px] text-[var(--text-tertiary)]",
+        "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-md transition-colors cursor-pointer",
       )}
       style={{ paddingLeft: `${depth * 12 + 8 + 15}px`, paddingRight: "8px" }}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{name}</span>
-    </div>
+      <span className="truncate text-left">{name}</span>
+    </button>
   );
 }
 

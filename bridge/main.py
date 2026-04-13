@@ -869,6 +869,53 @@ async def list_directory(request: Request):
     }
 
 
+@app.post("/api/files/content")
+async def file_content(request: Request):
+    """Read text content of a file."""
+    body = await request.json()
+    raw_path = body.get("path")
+    if not raw_path:
+        return JSONResponse(status_code=400, content={"detail": "Missing path"})
+
+    base = Path.home()
+    target = Path(raw_path).resolve()
+
+    if not str(target).startswith(str(base)):
+        return JSONResponse(status_code=403, content={"detail": "Access denied"})
+
+    if not target.is_file():
+        return JSONResponse(status_code=404, content={"detail": "File not found"})
+
+    try:
+        content = target.read_text(errors="replace")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return {"content": content, "path": str(target)}
+
+
+@app.post("/api/files/content-binary")
+async def file_content_binary(request: Request):
+    """Read binary file and return as a downloadable response."""
+    from fastapi.responses import FileResponse
+
+    body = await request.json()
+    raw_path = body.get("path")
+    if not raw_path:
+        return JSONResponse(status_code=400, content={"detail": "Missing path"})
+
+    base = Path.home()
+    target = Path(raw_path).resolve()
+
+    if not str(target).startswith(str(base)):
+        return JSONResponse(status_code=403, content={"detail": "Access denied"})
+
+    if not target.is_file():
+        return JSONResponse(status_code=404, content={"detail": "File not found"})
+
+    return FileResponse(str(target), filename=target.name)
+
+
 @app.get("/api/fts/index/{workspace:path}")
 def fts_index_get(workspace: str, session_id: str = ""):
     return {"status": "idle", "progress": 0}
