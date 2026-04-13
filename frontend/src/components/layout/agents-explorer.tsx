@@ -31,7 +31,7 @@ function AgentNode({ name, sessions, activeSessionId, onSelectSession }: AgentNo
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex items-center gap-1.5 w-full py-1.5 px-2 text-[16px] rounded-md transition-colors",
+          "flex items-center gap-1.5 w-full py-1.5 px-2 text-[13px] rounded-lg transition-colors",
           "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
         )}
       >
@@ -57,7 +57,7 @@ function AgentNode({ name, sessions, activeSessionId, onSelectSession }: AgentNo
                 key={session.id}
                 onClick={() => onSelectSession(session.id)}
                 className={cn(
-                  "flex items-center gap-1.5 w-full py-1 px-2 rounded-md text-[15px] transition-colors truncate",
+                  "flex items-center gap-1.5 w-full py-1 px-2 rounded-lg text-[13px] transition-colors truncate",
                   session.id === activeSessionId
                     ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] ring-1 ring-[var(--sidebar-active-border)]"
                     : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
@@ -117,7 +117,7 @@ export function AgentsExplorer() {
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={cn(
-          "flex items-center gap-2 w-full px-2 py-2 rounded-xl text-[16px] transition-all duration-150 ease-out",
+          "flex items-center gap-3 w-full px-3 py-2 rounded-xl text-[13px] transition-all duration-150 ease-out",
           isExpanded
             ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
             : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.98]",

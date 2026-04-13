@@ -26,6 +26,10 @@ const nextConfig: NextConfig = {
           source: "/health",
           destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/health`,
         },
+        {
+          source: "/gateway/:path*",
+          destination: `${process.env.NEXT_PUBLIC_XO_COWORK_API_URL || "http://localhost:5002"}/gateway/:path*`,
+        },
       ];
     },
   }),

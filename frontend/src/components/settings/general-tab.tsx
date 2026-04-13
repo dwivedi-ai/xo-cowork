@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Sun, Moon, Monitor, RefreshCw, Check, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { IS_DESKTOP } from "@/lib/constants";
+import { API, IS_DESKTOP, resolveCoworkApiUrl } from "@/lib/constants";
+import { api, ApiError } from "@/lib/api";
 import { TextPart } from "@/components/parts/text-part";
 
 export function GeneralTab() {
@@ -76,6 +78,41 @@ export function GeneralTab() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [proseFont, setProseFont] = useState<"serif" | "sans">("serif");
+  const [gatewayRestarting, setGatewayRestarting] = useState(false);
+
+  const restartGateway = useCallback(async () => {
+    setGatewayRestarting(true);
+    try {
+      const res = await api.post<{
+        status: string;
+        output?: string;
+        error?: string | null;
+      }>(resolveCoworkApiUrl(API.GATEWAY.RESTART));
+      if (res.status === "restarted") {
+        toast.success(t("gatewayRestarted"));
+      } else {
+        const msg = [res.error, res.output].filter(Boolean).join("\n") || t("gatewayRestartFailed");
+        toast.error(msg.length > 280 ? `${msg.slice(0, 280)}…` : msg);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const body = e.body;
+        let msg = e.message;
+        if (body && typeof body === "object" && "detail" in body) {
+          const d = (body as { detail: unknown }).detail;
+          if (typeof d === "string") msg = d;
+          else if (d && typeof d === "object" && "error" in d) {
+            msg = String((d as { error: unknown }).error);
+          }
+        }
+        toast.error(msg.length > 280 ? `${msg.slice(0, 280)}…` : msg);
+      } else {
+        toast.error(t("gatewayRestartFailed"));
+      }
+    } finally {
+      setGatewayRestarting(false);
+    }
+  }, [t]);
 
   return (
     <div className="space-y-8">
@@ -171,6 +208,34 @@ export function GeneralTab() {
             </button>
           ))}
         </div>
+      </section>
+
+      <Separator />
+
+      {/* OpenClaw gateway */}
+      <section>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">
+          {t("openclawGateway")}
+        </h2>
+        <p className="text-xs text-[var(--text-secondary)] mb-3 max-w-md">
+          {t("gatewayRestartDesc")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs h-7"
+          disabled={gatewayRestarting}
+          onClick={restartGateway}
+        >
+          {gatewayRestarting ? (
+            <>
+              <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+              {t("gatewayRestarting")}
+            </>
+          ) : (
+            t("restartGateway")
+          )}
+        </Button>
       </section>
 
       <Separator />

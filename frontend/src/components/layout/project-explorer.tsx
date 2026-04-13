@@ -84,8 +84,8 @@ function FolderNode({ name, path, depth }: FolderNodeProps) {
       <button
         onClick={toggle}
         className={cn(
-          "flex items-center gap-1.5 w-full py-1 text-[16px] text-[var(--text-secondary)]",
-          "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-md transition-colors",
+          "flex items-center gap-1.5 w-full py-1.5 text-[13px] text-[var(--text-secondary)]",
+          "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-lg transition-colors",
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: "8px" }}
       >
@@ -136,8 +136,8 @@ function FileNode({ name, path, depth }: FileNodeProps) {
     <button
       onClick={handleClick}
       className={cn(
-        "flex items-center gap-1.5 w-full py-1 text-[16px] text-[var(--text-tertiary)]",
-        "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-md transition-colors cursor-pointer",
+        "flex items-center gap-1.5 w-full py-1.5 text-[13px] text-[var(--text-tertiary)]",
+        "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-lg transition-colors cursor-pointer",
       )}
       style={{ paddingLeft: `${depth * 12 + 8 + 15}px`, paddingRight: "8px" }}
     >
@@ -161,7 +161,7 @@ export function ProjectExplorer() {
       setLoading(true);
       try {
         const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
-          path: "/home/coder",
+          path: "/home/coder/.openclaw/workspace",
         });
         setRootData({ dirs: res.dirs, files: res.files });
       } catch {
@@ -178,7 +178,7 @@ export function ProjectExplorer() {
       <button
         onClick={toggle}
         className={cn(
-          "flex items-center gap-2 w-full px-2 py-2 rounded-xl text-[16px] transition-all duration-150 ease-out",
+          "flex items-center gap-3 w-full px-3 py-2 rounded-xl text-[13px] transition-all duration-150 ease-out",
           isExpanded
             ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
             : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.98]",

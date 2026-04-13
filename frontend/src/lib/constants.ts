@@ -101,6 +101,29 @@ export function resolveApiUrl(path: string): string {
   return path;
 }
 
+/**
+ * xo-cowork-api (FastAPI), default http://localhost:5002 — separate from the main app backend
+ * (`NEXT_PUBLIC_API_URL`, often :8000). Override with `NEXT_PUBLIC_XO_COWORK_API_URL`.
+ */
+export const XO_COWORK_API_BASE = (
+  process.env.NEXT_PUBLIC_XO_COWORK_API_URL || "http://localhost:5002"
+).replace(/\/$/, "");
+
+/**
+ * Resolve a path on xo-cowork-api. Browser web app uses a root-relative URL so Next.js rewrites avoid
+ * cross-origin calls. Desktop and remote PWA use {@link XO_COWORK_API_BASE}.
+ */
+export function resolveCoworkApiUrl(path: string): string {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (typeof window === "undefined") {
+    return `${XO_COWORK_API_BASE}${p}`;
+  }
+  if (IS_DESKTOP || getRemoteConfig()) {
+    return `${XO_COWORK_API_BASE}${p}`;
+  }
+  return p;
+}
+
 export const API = {
   CHAT: {
     PROMPT: "/api/chat/prompt",
@@ -149,6 +172,9 @@ export const API = {
   },
   ARTIFACTS: {
     EXPORT_PDF: "/api/artifacts/export-pdf",
+  },
+  SECRETS: {
+    ENV: "/api/secrets/env",
   },
   USAGE: "/api/usage",
   CONFIG: {
@@ -250,6 +276,9 @@ export const API = {
     EXPORT: "/api/workspace-memory/export",
   },
   HEALTH: "/health",
+  GATEWAY: {
+    RESTART: "/gateway/restart",
+  },
   REMOTE: {
     ENABLE: "/api/remote/enable",
     DISABLE: "/api/remote/disable",

@@ -95,6 +95,7 @@ export function FilesCard() {
   const workspaceFiles = useWorkspaceStore((s) => s.workspaceFiles);
   const collapsed = useWorkspaceStore((s) => s.collapsedSections["files"]);
   const toggleSection = useWorkspaceStore((s) => s.toggleSection);
+  const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
 
   return (
     <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] overflow-hidden">
@@ -102,12 +103,20 @@ export function FilesCard() {
         className="flex items-center justify-between w-full px-4 py-3 text-left transition-colors"
         onClick={() => toggleSection("files")}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col min-w-0 gap-0.5">
           <span className="text-sm font-medium text-[var(--text-primary)]">
             Files
           </span>
+          {activeWorkspacePath && (
+            <span
+              className="text-[11px] text-[var(--text-tertiary)] font-mono truncate max-w-[160px]"
+              title={activeWorkspacePath}
+            >
+              {activeWorkspacePath}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <FolderOpen className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />
           <ChevronDown
             className={cn(
