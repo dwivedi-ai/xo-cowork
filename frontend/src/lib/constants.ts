@@ -109,7 +109,12 @@ export const API = {
       // Remote mode: use tunnel URL instead of localhost
       const rc = getRemoteConfig();
       if (rc) return `${rc.url}/api/chat/stream/${streamId}`;
-      return `${getBackendUrlSync()}/api/chat/stream/${streamId}`;
+      // Desktop mode: direct connection to backend
+      if (IS_DESKTOP) return `${getBackendUrlSync()}/api/chat/stream/${streamId}`;
+      // Web mode: use relative URL so it goes through Next.js rewrite proxy.
+      // Direct backend URLs break in port-forwarded environments (e.g., two
+      // VS Code workspaces) where localhost:8000 may point to the wrong backend.
+      return `/api/chat/stream/${streamId}`;
     },
     ABORT: "/api/chat/abort",
     ACTIVE: "/api/chat/active",
