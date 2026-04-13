@@ -7,31 +7,41 @@ Proxies chat messages to OpenClaw's OpenAI-compatible API with SSE translation.
 """
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+load_dotenv()
+
 app = FastAPI(title="OpenClaw Bridge")
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept-Language"],
 )
 
 OPENCLAW_DIR = Path.home() / ".openclaw"
 AGENTS_DIR = OPENCLAW_DIR / "agents"
 
 # OpenClaw API config
-OPENCLAW_API_URL = "http://127.0.0.1:18789/v1/chat/completions"
-OPENCLAW_API_KEY = "openyak-openclaw"
-OPENCLAW_MODEL = "openclaw/default"
+OPENCLAW_API_URL = os.getenv("OPENCLAW_API_URL", "http://127.0.0.1:18789/v1/chat/completions")
+OPENCLAW_API_KEY = os.getenv("OPENCLAW_API_KEY", "xo-cowork")
+OPENCLAW_MODEL = os.getenv("OPENCLAW_MODEL", "openclaw/default")
 
 # In-memory store for pending streams
 # stream_id -> { session_id, text }
@@ -703,6 +713,35 @@ def list_connectors():
 @app.get("/api/channels")
 def list_channels():
     return []
+
+
+@app.get("/api/channels/openclaw/status")
+def openclaw_status():
+    """Check if OpenClaw gateway is reachable."""
+    from urllib.parse import urlparse
+    parsed = urlparse(OPENCLAW_API_URL)
+    port = parsed.port or 18789
+    try:
+        resp = httpx.get(OPENCLAW_API_URL, timeout=3.0)
+        running = resp.status_code in (200, 405)
+    except Exception:
+        running = False
+    return {
+        "installed": True,
+        "running": running,
+        "port": port if running else None,
+        "ws_url": None,
+    }
+
+
+@app.get("/api/ollama/status")
+def ollama_status():
+    return {"binary_installed": False, "running": False}
+
+
+@app.get("/api/config/openai-subscription")
+def openai_subscription():
+    return {"is_connected": False, "email": "", "needs_reauth": False}
 
 
 @app.get("/api/plugins/status")
