@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarHeader } from "./sidebar-header";
 import { SidebarNav } from "./sidebar-nav";
+import { ProjectExplorer } from "./project-explorer";
+import { AgentsExplorer } from "./agents-explorer";
 import { SessionList } from "./session-list";
 import { SidebarFooter } from "./sidebar-footer";
 import { useSidebarStore } from "@/stores/sidebar-store";
@@ -25,9 +27,13 @@ export function Sidebar() {
       >
         <SidebarHeader />
         <SidebarNav />
-        <Suspense fallback={<div className="flex-1" />}>
+        <ProjectExplorer />
+        <AgentsExplorer />
+        {/* SessionList hidden temporarily for UI evaluation */}
+        <div className="flex-1" />
+        {/* <Suspense fallback={<div className="flex-1" />}>
           <SessionList />
-        </Suspense>
+        </Suspense> */}
         <SidebarFooter />
       </motion.aside>
     </TooltipProvider>

@@ -830,6 +830,45 @@ def workspace_memory_export(workspace_path: str = ""):
     return {"ok": True}
 
 
+@app.post("/api/files/list-directory")
+async def list_directory(request: Request):
+    """List files and directories at a given path."""
+    body = await request.json()
+    raw_path = body.get("path")
+    base = Path.home()
+
+    if raw_path:
+        target = Path(raw_path).resolve()
+        # Prevent traversal outside home
+        if not str(target).startswith(str(base)):
+            return JSONResponse(status_code=403, content={"detail": "Access denied"})
+    else:
+        target = base
+
+    if not target.is_dir():
+        return JSONResponse(status_code=404, content={"detail": "Not a directory"})
+
+    dirs = []
+    files = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.is_dir():
+                dirs.append({"name": entry.name, "path": str(entry)})
+            else:
+                files.append({"name": entry.name, "path": str(entry)})
+    except PermissionError:
+        pass
+
+    parent = str(target.parent) if target != base else None
+
+    return {
+        "path": str(target),
+        "parent": parent,
+        "dirs": dirs,
+        "files": files,
+    }
+
+
 @app.get("/api/fts/index/{workspace:path}")
 def fts_index_get(workspace: str, session_id: str = ""):
     return {"status": "idle", "progress": 0}
