@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Code, Eye, BookOpen, Ghost, User, Bot } from "lucide-react";
+import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useAgentDetail, useUpdateAgent } from "@/hooks/use-agents";
 import { ApiError } from "@/lib/api";
-import { getChatRoute } from "@/lib/routes";
 import type { AgentFullDetail } from "@/types/agent";
 
 function formatApiError(err: unknown): string {
@@ -37,29 +38,108 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function JsonBlock({ value }: { value: unknown }) {
-  const text = JSON.stringify(value ?? null, null, 2);
-  return (
-    <ScrollArea className="max-h-[min(24rem,50vh)] w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)]">
-      <pre className="p-3 text-[11px] leading-relaxed font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">
-        {text}
-      </pre>
-    </ScrollArea>
-  );
-}
+/** Tab definitions for the 4 agent workspace files */
+const AGENT_FILE_TABS = [
+  { id: "AGENTS.md", label: "Agents", icon: Bot },
+  { id: "SOUL.md", label: "Soul", icon: Ghost },
+  { id: "IDENTITY.md", label: "Identity", icon: BookOpen },
+  { id: "USER.md", label: "User", icon: User },
+] as const;
 
-function MarkdownPanel({ title, content }: { title: string; content: string }) {
+type AgentFileTabId = (typeof AGENT_FILE_TABS)[number]["id"];
+
+/** Tabbed markdown viewer for agent workspace files — mirrors ProjectTabs style. */
+function AgentFileTabs({ files }: { files: Record<string, string | null> }) {
+  const availableTabs = AGENT_FILE_TABS.filter((t) => files[t.id] != null && files[t.id] !== "");
+  const [activeTab, setActiveTab] = useState<AgentFileTabId>(availableTabs[0]?.id ?? "AGENTS.md");
+  const [showSource, setShowSource] = useState(false);
+
+  if (availableTabs.length === 0) return null;
+
+  const content = files[activeTab] ?? "";
+
   return (
-    <details className="group rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] open:ring-1 open:ring-[var(--border-heavy)]">
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-tertiary)] rounded-xl">
-        {title}
-      </summary>
-      <ScrollArea className="max-h-64 border-t border-[var(--border-default)]">
-        <pre className="p-3 text-[11px] leading-relaxed font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">
-          {content || "—"}
-        </pre>
-      </ScrollArea>
-    </details>
+    <div className="w-full">
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] mb-5">
+        {availableTabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setShowSource(false); }}
+              className={cn(
+                "relative flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-all duration-200",
+                isActive
+                  ? "text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              )}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="agent-file-tab-indicator"
+                  className="absolute inset-0 rounded-lg bg-[var(--sidebar-active)] shadow-sm border border-[var(--border-default)]"
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
+              <span className="relative flex items-center gap-1.5">
+                <tab.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content card */}
+      {content ? (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] overflow-hidden">
+          {/* File header with source toggle */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--surface-tertiary)]">
+            <div className="flex items-center gap-2">
+              <FileText className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />
+              <span className="text-[12px] font-medium text-[var(--text-secondary)]">{activeTab}</span>
+            </div>
+            <button
+              onClick={() => setShowSource((s) => !s)}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] transition-colors"
+              title={showSource ? "Show preview" : "Show source"}
+            >
+              {showSource ? (
+                <><Eye className="h-3 w-3" /> Preview</>
+              ) : (
+                <><Code className="h-3 w-3" /> Source</>
+              )}
+            </button>
+          </div>
+
+          {/* Rendered markdown or raw source */}
+          <div className="max-h-[380px] overflow-y-auto scrollbar-thin">
+            {showSource ? (
+              <pre className="p-4 text-[13px] leading-relaxed font-mono text-[var(--text-primary)] whitespace-pre-wrap break-words">
+                {content}
+              </pre>
+            ) : (
+              <div className="p-5">
+                <div className="prose max-w-none text-[var(--text-primary)] leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                    {content}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-[var(--border-default)] p-8 text-center">
+          <FileText className="h-8 w-8 mx-auto mb-3 text-[var(--text-quaternary)]" />
+          <p className="text-[14px] font-medium text-[var(--text-secondary)] mb-1">No content</p>
+          <p className="text-[12px] text-[var(--text-tertiary)]">
+            Add a <code className="px-1 py-0.5 rounded bg-[var(--surface-tertiary)] text-[var(--text-tertiary)]">{activeTab}</code> file to the agent workspace.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -146,10 +226,9 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     );
   }
 
-  const workspaceEntries = Object.entries(data.workspace_files).filter(([, v]) => v != null && v !== "");
-
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 pb-24">
+    <div className="flex-1 overflow-y-auto">
+    <div className="mx-auto max-w-2xl px-4 py-6 pb-24">
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" className="gap-2 -ml-2" onClick={() => router.back()} type="button">
           <ArrowLeft className="h-4 w-4" />
@@ -218,97 +297,10 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
           </div>
         </Section>
 
-        <Section title={t("agentPageSectionOverview")}>
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageAgentId")}</dt>
-              <dd className="font-mono text-[var(--text-primary)]">{data.id}</dd>
-            </div>
-            <div>
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageSessions")}</dt>
-              <dd className="text-[var(--text-primary)]">{data.sessions.count}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageWorkspaceDir")}</dt>
-              <dd className="break-all font-mono text-xs text-[var(--text-secondary)]">{data.workspace}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageAgentDataDir")}</dt>
-              <dd className="break-all font-mono text-xs text-[var(--text-secondary)]">{data.on_disk.agent_dir}</dd>
-            </div>
-          </dl>
-        </Section>
-
-        <Section title={t("agentPageSectionIdentity")}>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageIdentityName")}</dt>
-              <dd className="text-[var(--text-primary)]">{data.identity.name ?? "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageIdentityEmoji")}</dt>
-              <dd className="text-[var(--text-primary)]">{data.identity.emoji ?? "—"}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{t("agentPageBio")}</dt>
-              <dd className="whitespace-pre-wrap text-[var(--text-secondary)]">{data.identity.bio || "—"}</dd>
-            </div>
-          </dl>
-        </Section>
-
-        <Section title={t("agentPageSectionWorkspaceFiles")}>
-          {workspaceEntries.length === 0 ? (
-            <p className="text-sm text-[var(--text-tertiary)]">{t("agentPageNoWorkspaceFiles")}</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {workspaceEntries.map(([fname, content]) => (
-                <MarkdownPanel key={fname} title={fname} content={content ?? ""} />
-              ))}
-            </div>
-          )}
-        </Section>
-
-        <Section title={t("agentPageSectionModels")}>
-          <p className="mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageEffectiveModel")}</p>
-          <p className="mb-4 font-mono text-sm text-[var(--text-primary)]">{data.model ?? t("agentPageDefaultModel")}</p>
-          <p className="mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageModelOverrideRaw")}</p>
-          <JsonBlock value={data.model_raw} />
-          <p className="mt-4 mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageModelsCatalog")}</p>
-          <JsonBlock value={data.on_disk.models_catalog} />
-          <p className="mt-4 mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageDefaultsTitle")}</p>
-          <JsonBlock value={data.agents_defaults} />
-        </Section>
-
-        <Section title={t("agentPageSectionAccess")}>
-          <p className="mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageAuthState")}</p>
-          <JsonBlock value={data.on_disk.auth_state} />
-          <p className="mt-4 mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageAuthProfiles")}</p>
-          <JsonBlock value={data.on_disk.auth_profiles} />
-          <p className="mt-4 mb-2 text-xs text-[var(--text-tertiary)]">{t("agentPageGlobalAuth")}</p>
-          <JsonBlock value={data.openclaw_global_auth} />
-        </Section>
-
-        <Section title={t("agentPageSectionConfig")}>
-          <JsonBlock value={data.config_entry} />
-        </Section>
-
-        <Section title={t("agentPageSectionSessions")}>
-          <p className="mb-2 break-all font-mono text-[11px] text-[var(--text-tertiary)]">{data.sessions.index_path}</p>
-          {data.sessions.session_ids.length === 0 ? (
-            <p className="text-sm text-[var(--text-tertiary)]">{t("agentPageNoSessions")}</p>
-          ) : (
-            <ul className="max-h-48 overflow-y-auto text-sm font-mono text-[var(--text-secondary)]">
-              {data.sessions.session_ids.map((sid) => (
-                <li key={sid}>
-                  <Link href={getChatRoute(sid)} className="text-[var(--brand-primary)] hover:underline">
-                    {sid}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+        {/* Agent workspace files — tabbed markdown viewer */}
+        <AgentFileTabs files={data.workspace_files} />
       </div>
+    </div>
     </div>
   );
 }
