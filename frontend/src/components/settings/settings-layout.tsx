@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound, FileJson } from "lucide-react";
+import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound, FileJson, BarChart3 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,10 +14,12 @@ import { PluginsTabContent } from "@/app/(main)/plugins/content";
 import { RemoteTabContent } from "@/app/(main)/remote/content";
 import { CodexSetupPanel } from "@/components/settings/codex-setup-panel";
 import { ConfigTab } from "@/components/settings/config-tab";
+import { UsageTab } from "@/components/settings/usage-tab";
 
 const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
   { id: "providers", icon: Cpu, labelKey: "tabProviders" },
+  { id: "usage", icon: BarChart3, labelKey: "tabUsage" },
   { id: "automations", icon: Timer, labelKey: "tabAutomations" },
   { id: "plugins", icon: Plug, labelKey: "tabPlugins" },
   { id: "remote", icon: Wifi, labelKey: "tabChannels" },
@@ -103,6 +105,7 @@ export default function SettingsPageClient() {
           <div className="min-w-0">
             {activeTab === "general" && <GeneralTab />}
             {activeTab === "providers" && <CodexSetupPanel />}
+            {activeTab === "usage" && <UsageTab />}
             {activeTab === "automations" && <AutomationsTabContent />}
             {activeTab === "plugins" && <PluginsTabContent />}
             {activeTab === "remote" && <RemoteTabContent />}
