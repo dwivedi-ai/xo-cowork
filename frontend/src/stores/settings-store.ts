@@ -97,7 +97,7 @@ export const useSettingsStore = create<SettingsStore>()(
       reasoningEnabled: true,
       permissionPresets: { fileChanges: true, runCommands: true },
       savedPermissions: [],
-      workspaceDirectory: null,
+      workspaceDirectory: "/home/coder/.openclaw/workspace",
       hasSeenHints: false,
       language: "auto",
       activeProvider: "byok",

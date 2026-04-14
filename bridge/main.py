@@ -8,13 +8,19 @@ Proxies chat messages to OpenClaw's OpenAI-compatible API with SSE translation.
 
 import json
 import os
+import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import hashlib
+import mimetypes
+
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -37,6 +43,36 @@ app.add_middleware(
 
 OPENCLAW_DIR = Path.home() / ".openclaw"
 AGENTS_DIR = OPENCLAW_DIR / "agents"
+OPENCLAW_JSON = OPENCLAW_DIR / "openclaw.json"
+DEFAULT_OPENCLAW_WORKSPACE = OPENCLAW_DIR / "workspace"
+
+_VALID_AGENT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.IGNORECASE)
+_INVALID_AGENT_ID_CHARS = re.compile(r"[^a-z0-9_-]+", re.IGNORECASE)
+_LEADING_DASHES = re.compile(r"^-+")
+_TRAILING_DASHES = re.compile(r"-+$")
+
+_WORKSPACE_SEED_FILES = (
+    "AGENTS.md",
+    "SOUL.md",
+    "TOOLS.md",
+    "USER.md",
+    "HEARTBEAT.md",
+    "IDENTITY.md",
+    "BOOTSTRAP.md",
+)
+
+_WORKSPACE_DOC_FILES = (
+    "IDENTITY.md",
+    "SOUL.md",
+    "USER.md",
+    "AGENTS.md",
+    "TOOLS.md",
+    "HEARTBEAT.md",
+    "BOOTSTRAP.md",
+    "MEMORY.md",
+)
+
+_MAX_AGENT_PAYLOAD_BYTES = 256_000
 
 # OpenClaw API config
 OPENCLAW_API_URL = os.getenv("OPENCLAW_API_URL", "http://127.0.0.1:18789/v1/chat/completions")
@@ -61,6 +97,158 @@ def iso_now() -> str:
 
 def short_id() -> str:
     return uuid.uuid4().hex[:8]
+
+
+def normalize_agent_id(value: str | None) -> str:
+    """Match OpenClaw's normalizeAgentId (session-key) rules."""
+    if value is None:
+        return "main"
+    trimmed = value.strip()
+    if not trimmed:
+        return "main"
+    normalized = trimmed.lower()
+    if _VALID_AGENT_ID.fullmatch(normalized):
+        return normalized
+    cleaned = _INVALID_AGENT_ID_CHARS.sub("-", normalized)
+    cleaned = _LEADING_DASHES.sub("", cleaned)
+    cleaned = _TRAILING_DASHES.sub("", cleaned)
+    cleaned = cleaned[:64]
+    return cleaned if cleaned else "main"
+
+
+def list_agent_entries(cfg: dict) -> list[dict]:
+    agents = cfg.get("agents")
+    if not isinstance(agents, dict):
+        return []
+    lst = agents.get("list")
+    if not isinstance(lst, list):
+        return []
+    return [e for e in lst if isinstance(e, dict) and e.get("id")]
+
+
+def resolve_default_agent_id(cfg: dict) -> str:
+    entries = list_agent_entries(cfg)
+    if not entries:
+        return "main"
+    defaults = [e for e in entries if e.get("default") is True]
+    chosen = (defaults[0] if defaults else entries[0]).get("id", "main")
+    return normalize_agent_id(str(chosen))
+
+
+def resolve_agent_workspace_dir(cfg: dict, agent_id: str) -> Path:
+    """Mirror OpenClaw resolveAgentWorkspaceDir for local disk layout."""
+    aid = normalize_agent_id(agent_id)
+    entry = next(
+        (e for e in list_agent_entries(cfg) if normalize_agent_id(str(e.get("id", ""))) == aid),
+        None,
+    )
+    if entry and isinstance(entry.get("workspace"), str) and entry["workspace"].strip():
+        return Path(entry["workspace"]).expanduser().resolve()
+
+    default_id = resolve_default_agent_id(cfg)
+    agents_defaults = (cfg.get("agents") or {}).get("defaults") or {}
+    fallback = agents_defaults.get("workspace")
+    if aid == default_id:
+        if isinstance(fallback, str) and fallback.strip():
+            return Path(fallback).expanduser().resolve()
+        return DEFAULT_OPENCLAW_WORKSPACE.resolve()
+    if isinstance(fallback, str) and fallback.strip():
+        return (Path(fallback).expanduser().resolve() / aid).resolve()
+    return (OPENCLAW_DIR / f"workspace-{aid}").resolve()
+
+
+def load_openclaw_config() -> dict:
+    if not OPENCLAW_JSON.exists():
+        return {}
+    try:
+        with open(OPENCLAW_JSON) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def write_openclaw_config(cfg: dict) -> None:
+    OPENCLAW_JSON.parent.mkdir(parents=True, exist_ok=True)
+    tmp = OPENCLAW_JSON.with_suffix(".tmp")
+    text = json.dumps(cfg, indent=2) + "\n"
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(OPENCLAW_JSON)
+
+
+def find_agent_entry_index(entries: list[dict], agent_id: str) -> int:
+    aid = normalize_agent_id(agent_id)
+    for i, e in enumerate(entries):
+        if normalize_agent_id(str(e.get("id", ""))) == aid:
+            return i
+    return -1
+
+
+def _agent_model_to_display(model_value) -> str | None:
+    if model_value is None:
+        return None
+    if isinstance(model_value, str):
+        return model_value
+    if isinstance(model_value, dict):
+        p = model_value.get("primary")
+        if isinstance(p, str):
+            return p
+    return None
+
+
+def apply_agent_list_entry(cfg: dict, agent_id: str, name: str, workspace: Path) -> dict:
+    """
+    Append or update agents.list like OpenClaw applyAgentConfig (add branch).
+    When the list is empty and the new id is not the default agent, inserts {id: main} first.
+    """
+    aid = normalize_agent_id(agent_id)
+    default_id = resolve_default_agent_id(cfg)
+    agents_block = dict(cfg.get("agents") or {})
+    lst = list_agent_entries(cfg)
+    next_list = [dict(e) for e in lst]
+    idx = find_agent_entry_index(next_list, aid)
+    next_entry: dict = {"id": aid, "name": name, "workspace": str(workspace)}
+    if idx >= 0:
+        next_list[idx] = {**next_list[idx], **next_entry}
+    else:
+        if len(next_list) == 0 and aid != default_id:
+            next_list.append({"id": default_id})
+        next_list.append(next_entry)
+    agents_block["list"] = next_list
+    return {**cfg, "agents": agents_block}
+
+
+def _path_must_be_under_home(path: Path) -> bool:
+    home = Path.home().resolve()
+    try:
+        path.resolve().relative_to(home)
+        return True
+    except ValueError:
+        return False
+
+
+def seed_agent_workspace(workspace_dir: Path, template_dir: Path) -> None:
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    if not template_dir.is_dir():
+        return
+    for fname in _WORKSPACE_SEED_FILES:
+        src = template_dir / fname
+        dst = workspace_dir / fname
+        if src.is_file() and not dst.exists():
+            shutil.copy2(src, dst)
+
+
+def ensure_openclaw_agent_disk(agent_id: str, workspace_dir: Path) -> None:
+    """Sessions store + optional workspace bootstrap; matches ~/.openclaw/agents/<id> layout."""
+    aid = normalize_agent_id(agent_id)
+    sessions_dir = AGENTS_DIR / aid / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    idx_file = sessions_dir / "sessions.json"
+    if not idx_file.exists():
+        idx_file.write_text("{}", encoding="utf-8")
+    (AGENTS_DIR / aid / "agent").mkdir(parents=True, exist_ok=True)
+    tpl = DEFAULT_OPENCLAW_WORKSPACE if DEFAULT_OPENCLAW_WORKSPACE.is_dir() else Path()
+    seed_agent_workspace(workspace_dir, tpl)
 
 
 def parse_jsonl(path: Path) -> list[dict]:
@@ -133,7 +321,8 @@ def load_all_sessions() -> list[dict]:
                 "project_id": None,
                 "parent_id": None,
                 "slug": None,
-                "directory": agent_name,
+                "agent": agent_name,
+                "directory": str(OPENCLAW_DIR / "workspace"),
                 "title": title,
                 "version": 1,
                 "summary_additions": 0,
@@ -502,6 +691,19 @@ def find_session_id_by_key(session_key: str) -> str | None:
     return None
 
 
+def openclaw_agent_id_from_prompt_body(body: dict) -> str:
+    """Resolve OpenClaw agent id from `model` (e.g. openclaw/research) for new sessions."""
+    model = body.get("model")
+    if isinstance(model, str):
+        lowered = model.strip().lower()
+        if lowered.startswith("openclaw/"):
+            rest = model.split("/", 1)[1] if "/" in model else ""
+            return normalize_agent_id(rest) if rest.strip() else "main"
+        if lowered == "openclaw":
+            return "main"
+    return "main"
+
+
 async def create_new_session(text: str, agent_name: str = "main") -> tuple[str, str, str]:
     """
     Create a new OpenClaw session by sending the first message.
@@ -578,7 +780,8 @@ async def chat_prompt(request: Request):
     # New session: create via OpenClaw, get the response immediately
     if not session_id:
         try:
-            session_key, new_session_id, response_text = await create_new_session(text)
+            oc_agent = openclaw_agent_id_from_prompt_body(body)
+            session_key, new_session_id, response_text = await create_new_session(text, agent_name=oc_agent)
         except Exception as e:
             return JSONResponse(status_code=500, content={"detail": str(e)})
 
@@ -651,38 +854,401 @@ def config_providers():
     return []
 
 
+OPENCLAW_MODEL_CAPABILITIES: dict = {
+    "function_calling": True,
+    "vision": False,
+    "reasoning": True,
+    "json_output": True,
+    "max_context": 200000,
+    "max_output": 16384,
+}
+
+
+def list_openclaw_models() -> list[dict]:
+    """One model row per OpenClaw agent so the UI can target `openclaw/<agentId>`."""
+    cfg = load_openclaw_config()
+    entries_by_id = {
+        normalize_agent_id(str(e.get("id", ""))): e
+        for e in list_agent_entries(cfg)
+        if e.get("id")
+    }
+    models: list[dict] = []
+    seen: set[str] = set()
+
+    if AGENTS_DIR.exists():
+        for agent_dir in sorted(AGENTS_DIR.iterdir()):
+            if not agent_dir.is_dir():
+                continue
+            aid = normalize_agent_id(agent_dir.name)
+            seen.add(aid)
+            meta = entries_by_id.get(aid, {})
+            display = meta.get("name") if isinstance(meta.get("name"), str) else None
+            label = (display or "").strip() or aid
+            models.append(
+                {
+                    "id": f"openclaw/{aid}",
+                    "name": label,
+                    "provider_id": "openclaw",
+                    "capabilities": dict(OPENCLAW_MODEL_CAPABILITIES),
+                    "pricing": {"prompt": 0, "completion": 0},
+                    "metadata": {"openclaw_agent_id": aid},
+                }
+            )
+
+    if not models:
+        models.append(
+            {
+                "id": "openclaw/main",
+                "name": "main",
+                "provider_id": "openclaw",
+                "capabilities": dict(OPENCLAW_MODEL_CAPABILITIES),
+                "pricing": {"prompt": 0, "completion": 0},
+                "metadata": {"openclaw_agent_id": "main"},
+            }
+        )
+
+    return models
+
+
 @app.get("/api/models")
 def list_models():
-    return [
-        {
-            "id": "openclaw",
-            "name": "OpenClaw Agent",
-            "provider_id": "openclaw",
-            "capabilities": {
-                "function_calling": True,
-                "vision": False,
-                "reasoning": True,
-                "json_output": True,
-                "max_context": 200000,
-                "max_output": 16384,
-            },
-            "pricing": {
-                "prompt": 0,
-                "completion": 0,
-            },
-            "metadata": {},
-        }
-    ]
+    return list_openclaw_models()
+
+
+class CreateAgentBody(BaseModel):
+    """Payload for POST /api/agents — persisted to OpenClaw ~/.openclaw/openclaw.json and disk layout."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    id: str | None = Field(None, max_length=80)
+    description: str | None = Field(None, max_length=4000)
+    workspace: str | None = Field(None, max_length=2048)
+
+
+def _agent_info_for_id(cfg: dict, agent_id: str, display_name: str | None, description: str) -> dict:
+    """OpenYak AgentInfo shape; `name` is the OpenClaw agent id so session.directory grouping matches."""
+    aid = normalize_agent_id(agent_id)
+    return {
+        "name": aid,
+        "description": description or display_name or aid,
+        "mode": "primary",
+        "tools": [],
+        "permissions": {"rules": []},
+        "system_prompt": None,
+        "temperature": None,
+        "metadata": {
+            "openclaw_id": aid,
+            "display_name": display_name or aid,
+            "workspace": str(resolve_agent_workspace_dir(cfg, aid)),
+        },
+    }
 
 
 @app.get("/api/agents")
 def list_agents():
-    agents = []
-    if AGENTS_DIR.exists():
-        for d in AGENTS_DIR.iterdir():
-            if d.is_dir():
-                agents.append({"id": d.name, "name": d.name})
+    cfg = load_openclaw_config()
+    entries = {normalize_agent_id(str(e.get("id", ""))): e for e in list_agent_entries(cfg)}
+    agents: list[dict] = []
+    if not AGENTS_DIR.exists():
+        return agents
+    for d in sorted(AGENTS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        aid = d.name
+        meta = entries.get(normalize_agent_id(aid), {})
+        display = meta.get("name") if isinstance(meta.get("name"), str) else None
+        desc = ""
+        if isinstance(meta.get("identity"), dict):
+            ident = meta["identity"]
+            if isinstance(ident.get("bio"), str):
+                desc = ident["bio"]
+        agents.append(_agent_info_for_id(cfg, aid, display, desc))
     return agents
+
+
+@app.post("/api/agents")
+def create_agent(body: CreateAgentBody):
+    """
+    Register a new OpenClaw agent: updates agents.list in openclaw.json, creates
+    ~/.openclaw/agents/<id>/sessions and workspace dirs (same layout as `openclaw agents add`).
+    """
+    display_name = body.name.strip()
+    agent_id = normalize_agent_id((body.id or body.name).strip())
+    if agent_id == "main":
+        return JSONResponse(status_code=400, content={"detail": 'Agent id "main" is reserved; choose another id or name.'})
+
+    cfg = load_openclaw_config()
+    existing_entries = list_agent_entries(cfg)
+    if find_agent_entry_index(existing_entries, agent_id) >= 0:
+        return JSONResponse(status_code=409, content={"detail": f'Agent "{agent_id}" already exists in openclaw.json.'})
+    if (AGENTS_DIR / agent_id).exists():
+        return JSONResponse(status_code=409, content={"detail": f'Agent directory "{agent_id}" already exists under ~/.openclaw/agents.'})
+
+    if body.workspace and body.workspace.strip():
+        ws = Path(body.workspace.strip()).expanduser().resolve()
+        if not _path_must_be_under_home(ws):
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "workspace must resolve to a path under your home directory."},
+            )
+        workspace_dir = ws
+    else:
+        workspace_dir = resolve_agent_workspace_dir(cfg, agent_id)
+
+    try:
+        next_cfg = apply_agent_list_entry(cfg, agent_id, display_name, workspace_dir)
+        write_openclaw_config(next_cfg)
+        ensure_openclaw_agent_disk(agent_id, workspace_dir)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    desc = (body.description or "").strip() or display_name
+    return _agent_info_for_id(next_cfg, agent_id, display_name, desc)
+
+
+def _read_text_limited(path: Path, max_bytes: int = _MAX_AGENT_PAYLOAD_BYTES) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[:max_bytes]
+    except Exception:
+        return None
+
+
+def _read_json_file_safe(path: Path) -> dict | list | None:
+    if not path.is_file():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _redact_secrets_nested(obj):
+    """Replace obvious credential fields; never return raw API keys."""
+    sensitive_keys = frozenset(
+        {"key", "token", "secret", "password", "accesstoken", "refreshtoken", "authorization", "apikey"}
+    )
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            lk = str(k).lower()
+            if lk in sensitive_keys:
+                out[k] = "[configured]" if v else None
+            else:
+                out[k] = _redact_secrets_nested(v)
+        return out
+    if isinstance(obj, list):
+        return [_redact_secrets_nested(x) for x in obj]
+    return obj
+
+
+def _summarize_auth_profiles(profiles_obj) -> dict[str, dict]:
+    """Non-secret view of auth profile entries."""
+    if not isinstance(profiles_obj, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for pid, p in profiles_obj.items():
+        if not isinstance(p, dict):
+            continue
+        row = {"provider": p.get("provider"), "mode": p.get("mode")}
+        if any(p.get(k) for k in ("key", "token", "secret", "password")):
+            row["credentials"] = "configured"
+        out[str(pid)] = row
+    return out
+
+
+def get_agent_detail(agent_id: str) -> dict | None:
+    """
+    Full agent snapshot for the UI: OpenClaw config, workspace docs, on-disk models,
+    redacted auth, sessions index, and global auth summary.
+    """
+    aid = normalize_agent_id(agent_id)
+    agent_root = AGENTS_DIR / aid
+    if not agent_root.is_dir():
+        return None
+
+    cfg = load_openclaw_config()
+    entries = list_agent_entries(cfg)
+    idx = find_agent_entry_index(entries, aid)
+    entry = dict(entries[idx]) if idx >= 0 else {}
+
+    display = entry.get("name") if isinstance(entry.get("name"), str) else None
+    desc = ""
+    identity_cfg: dict = {}
+    if isinstance(entry.get("identity"), dict):
+        identity_cfg = dict(entry["identity"])
+        bio = identity_cfg.get("bio")
+        if isinstance(bio, str):
+            desc = bio
+
+    ws_path = resolve_agent_workspace_dir(cfg, aid)
+    workspace_path_str = str(ws_path)
+    workspace_files: dict[str, str | None] = {}
+    for fname in _WORKSPACE_DOC_FILES:
+        content = _read_text_limited(ws_path / fname)
+        if content is not None:
+            workspace_files[fname] = content
+        elif (ws_path / fname).is_file():
+            workspace_files[fname] = ""
+
+    agent_disk = agent_root / "agent"
+    models_catalog = _read_json_file_safe(agent_disk / "models.json")
+    auth_state = _read_json_file_safe(agent_disk / "auth-state.json")
+    auth_profiles_raw = _read_json_file_safe(agent_disk / "auth-profiles.json")
+    auth_profiles_safe = None
+    if isinstance(auth_profiles_raw, dict):
+        auth_profiles_safe = _redact_secrets_nested(auth_profiles_raw)
+
+    sessions_index_path = agent_root / "sessions" / "sessions.json"
+    session_ids: list[str] = []
+    session_count = 0
+    idx_data = _read_json_file_safe(sessions_index_path)
+    if isinstance(idx_data, dict):
+        seen_ids: set[str] = set()
+        for _key, meta in idx_data.items():
+            if isinstance(meta, dict):
+                sid = meta.get("sessionId")
+                if isinstance(sid, str) and sid.strip():
+                    seen_ids.add(sid.strip())
+        session_count = len(seen_ids)
+        session_ids = sorted(seen_ids)[:80]
+
+    global_auth = (cfg.get("auth") or {}).get("profiles")
+    global_auth_summary = _summarize_auth_profiles(global_auth) if isinstance(global_auth, dict) else {}
+
+    agents_defaults = cfg.get("agents", {}).get("defaults")
+    if not isinstance(agents_defaults, dict):
+        agents_defaults = {}
+
+    return {
+        "id": aid,
+        "display_name": ((display or "").strip() or aid),
+        "description": desc,
+        "workspace": workspace_path_str,
+        "model": _agent_model_to_display(entry.get("model")),
+        "model_raw": entry.get("model"),
+        "identity": {
+            "name": identity_cfg.get("name") if isinstance(identity_cfg.get("name"), str) else None,
+            "emoji": identity_cfg.get("emoji") if isinstance(identity_cfg.get("emoji"), str) else None,
+            "bio": desc or None,
+        },
+        "config_entry": entry,
+        "agents_defaults": agents_defaults,
+        "workspace_files": workspace_files,
+        "on_disk": {
+            "agent_dir": str(agent_disk.resolve()),
+            "models_catalog": models_catalog,
+            "auth_state": auth_state,
+            "auth_profiles": auth_profiles_safe,
+        },
+        "sessions": {
+            "index_path": str(sessions_index_path.resolve()),
+            "count": session_count,
+            "session_ids": session_ids,
+        },
+        "openclaw_global_auth": global_auth_summary,
+    }
+
+
+class UpdateAgentBody(BaseModel):
+    """PATCH /api/agents/{id} — only fields present in the JSON body are applied."""
+
+    name: str | None = Field(None, max_length=200)
+    description: str | None = Field(None, max_length=4000)
+    workspace: str | None = Field(None, max_length=2048)
+    model: str | None = Field(None, max_length=400)
+    identity_name: str | None = Field(None, max_length=200)
+    identity_emoji: str | None = Field(None, max_length=32)
+
+
+def patch_agent_into_config(cfg: dict, agent_id: str, body: UpdateAgentBody) -> dict:
+    aid = normalize_agent_id(agent_id)
+    if find_agent_entry_index(list_agent_entries(cfg), aid) < 0:
+        ws_dir = resolve_agent_workspace_dir(cfg, aid)
+        cfg = apply_agent_list_entry(cfg, aid, aid, ws_dir)
+    entries = list_agent_entries(cfg)
+    idx = find_agent_entry_index(entries, aid)
+    if idx < 0:
+        raise RuntimeError("could not resolve agent in openclaw.json")
+    next_list = [dict(e) for e in entries]
+    entry = dict(next_list[idx])
+    if body.name is not None:
+        stripped = body.name.strip()
+        entry["name"] = stripped or aid
+    if body.workspace is not None:
+        ws = Path(body.workspace.strip()).expanduser().resolve()
+        if not _path_must_be_under_home(ws):
+            raise ValueError("workspace must resolve to a path under your home directory")
+        entry["workspace"] = str(ws)
+    if body.description is not None:
+        desc = body.description.strip()
+        ident = dict(entry.get("identity") or {})
+        if desc:
+            ident["bio"] = desc
+            entry["identity"] = ident
+        else:
+            ident.pop("bio", None)
+            if ident:
+                entry["identity"] = ident
+            else:
+                entry.pop("identity", None)
+    if body.model is not None:
+        m = body.model.strip()
+        if m:
+            entry["model"] = m
+        else:
+            entry.pop("model", None)
+    if body.identity_name is not None or body.identity_emoji is not None:
+        ident = dict(entry.get("identity") or {})
+        if body.identity_name is not None:
+            nv = body.identity_name.strip()
+            if nv:
+                ident["name"] = nv
+            else:
+                ident.pop("name", None)
+        if body.identity_emoji is not None:
+            ev = body.identity_emoji.strip()
+            if ev:
+                ident["emoji"] = ev
+            else:
+                ident.pop("emoji", None)
+        if ident:
+            entry["identity"] = ident
+        else:
+            entry.pop("identity", None)
+    next_list[idx] = entry
+    agents_block = dict(cfg.get("agents") or {})
+    agents_block["list"] = next_list
+    return {**cfg, "agents": agents_block}
+
+
+@app.get("/api/agents/{agent_id}")
+def get_agent(agent_id: str):
+    detail = get_agent_detail(agent_id)
+    if not detail:
+        return JSONResponse(status_code=404, content={"detail": f'Agent "{agent_id}" not found'})
+    return detail
+
+
+@app.patch("/api/agents/{agent_id}")
+def patch_agent(agent_id: str, body: UpdateAgentBody):
+    aid = normalize_agent_id(agent_id)
+    if not (AGENTS_DIR / aid).is_dir():
+        return JSONResponse(status_code=404, content={"detail": f'Agent "{aid}" not found'})
+    if not body.model_fields_set:
+        detail = get_agent_detail(aid)
+        return detail if detail else JSONResponse(status_code=404, content={"detail": "Not found"})
+    try:
+        cfg = load_openclaw_config()
+        next_cfg = patch_agent_into_config(cfg, aid, body)
+        write_openclaw_config(next_cfg)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+    detail = get_agent_detail(aid)
+    return detail if detail else JSONResponse(status_code=500, content={"detail": "Failed to read agent after update"})
 
 
 @app.get("/api/tools")
@@ -830,6 +1396,47 @@ def workspace_memory_export(workspace_path: str = ""):
     return {"ok": True}
 
 
+@app.post("/api/files/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    workspace: str = Form(""),
+):
+    """Save an uploaded file into the workspace (or ~/uploads fallback)."""
+    content = await file.read()
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    if workspace:
+        dest_dir = Path(workspace).resolve()
+    else:
+        dest_dir = Path.home() / "uploads"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = file.filename or "upload"
+    dest = dest_dir / filename
+
+    # Avoid overwriting — append hash suffix if name collides with different content
+    if dest.exists():
+        existing_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+        if existing_hash != content_hash:
+            stem = dest.stem
+            suffix = dest.suffix
+            dest = dest_dir / f"{stem}_{content_hash[:8]}{suffix}"
+
+    dest.write_bytes(content)
+
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    return {
+        "file_id": content_hash[:16],
+        "name": dest.name,
+        "path": str(dest),
+        "size": len(content),
+        "mime_type": mime,
+        "source": "uploaded",
+        "content_hash": content_hash,
+    }
+
+
 @app.post("/api/files/list-directory")
 async def list_directory(request: Request):
     """List files and directories at a given path."""
@@ -914,6 +1521,217 @@ async def file_content_binary(request: Request):
         return JSONResponse(status_code=404, content={"detail": "File not found"})
 
     return FileResponse(str(target), filename=target.name)
+
+
+# ---------------------------------------------------------------------------
+# Secrets — OpenClaw .env file
+# ---------------------------------------------------------------------------
+
+_ENV_FILE = Path.home() / ".openclaw" / ".env"
+
+
+def _parse_env_file(text: str) -> list[dict]:
+    """Parse a .env file into a list of {key, value} dicts (skips blank lines and comments)."""
+    entries = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key, _, value = stripped.partition("=")
+            entries.append({"key": key.strip(), "value": value.strip()})
+    return entries
+
+
+def _serialize_env_file(entries: list[dict]) -> str:
+    """Serialize a list of {key, value} dicts back to .env file text."""
+    lines = [f"{e['key']}={e['value']}" for e in entries if e.get("key", "").strip()]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+_PROJECT_SCAFFOLD: dict[str, str] = {
+    "WORKSPACE.md": """\
+# WORKSPACE.md - Project Overview
+
+This file is the source of truth for what this project is and where it stands.
+The AI reads it at the start of every session to get up to speed quickly.
+Keep it short and accurate — update it as the project evolves.
+
+## Purpose
+
+<!-- What does this project do? What problem does it solve?
+     One or two sentences is enough. -->
+
+## Stack & Structure
+
+<!-- Key technologies, frameworks, or tools in use.
+     Example:
+     - Language: Python 3.12
+     - Framework: FastAPI
+     - Database: PostgreSQL
+     - Frontend: Next.js (App Router) -->
+
+## Status
+
+<!-- Current state of the project. What's working, what's in progress?
+     Example:
+     - Auth: done
+     - API: in progress
+     - UI: not started -->
+
+## Important Paths
+
+<!-- Key files or directories the AI should know about.
+     Example:
+     - Entry point: src/main.py
+     - Config: .env
+     - Docs: docs/ -->
+
+---
+""",
+    "AGENTS.md": """\
+# AGENTS.md - Agent Instructions
+
+This file tells the AI how to behave inside this project.
+Think of it as a standing brief — rules, preferences, and context that apply
+to every conversation in this workspace.
+
+## Behaviour Rules
+
+<!-- How should the AI operate here? What should it always or never do?
+     Example:
+     - Always run tests before marking a task done
+     - Never delete files without confirming first
+     - Prefer editing existing files over creating new ones
+     - Use British English in all output -->
+
+## Code Style
+
+<!-- Project-specific conventions the AI must follow.
+     Example:
+     - 2-space indentation, no semicolons (JS/TS)
+     - Type hints required on all functions (Python)
+     - Commit messages: conventional commits format -->
+
+## Context the AI Should Know
+
+<!-- Background the AI needs but that won't be obvious from the code.
+     Example:
+     - This project is a rewrite of a legacy PHP app
+     - The client is non-technical — keep explanations simple
+     - Rate limits on the external API: 100 req/min -->
+
+## Off-Limits
+
+<!-- Anything the AI must not touch or change without explicit instruction.
+     Example:
+     - Do not modify database migrations
+     - Do not change the public API contract -->
+
+---
+""",
+    "OBJECTIVES.md": """\
+# OBJECTIVES.md - Goals & Tasks
+
+This file tracks what needs to get done.
+Update it regularly — move tasks between sections as work progresses.
+The AI will use this to understand priorities and pick up where you left off.
+
+## Goals
+
+<!-- The high-level outcomes you want to achieve.
+     These should be stable and rarely change.
+     Example:
+     - Launch a working MVP by end of month
+     - Reduce API response time to under 200ms
+     - Pass all existing tests with zero regressions -->
+
+## Current Tasks
+
+<!-- What you're actively working on right now.
+     Be specific so the AI can take action.
+     Example:
+     - [ ] Add input validation to the /register endpoint
+     - [ ] Write unit tests for the auth module
+     - [ ] Fix the 500 error on empty search results -->
+
+## Backlog
+
+<!-- Things to do later, in rough priority order.
+     Example:
+     - [ ] Add rate limiting to the public API
+     - [ ] Set up CI/CD pipeline
+     - [ ] Write onboarding docs -->
+
+## Done
+
+<!-- Completed items — keep a record so the AI understands what changed.
+     Example:
+     - [x] Set up project structure
+     - [x] Implement JWT authentication -->
+
+---
+""",
+}
+
+
+@app.post("/api/files/mkdir")
+async def make_directory(request: Request):
+    """Create a new directory under the user's home directory.
+
+    Pass ``scaffold: true`` to also create WORKSPACE.md, AGENTS.md, and
+    OBJECTIVES.md inside the new directory.
+    """
+    body = await request.json()
+    raw_path = body.get("path")
+    scaffold = bool(body.get("scaffold", False))
+
+    if not raw_path:
+        return JSONResponse(status_code=400, content={"detail": "Missing path"})
+
+    base = Path.home()
+    target = Path(raw_path).resolve()
+
+    if not str(target).startswith(str(base)):
+        return JSONResponse(status_code=403, content={"detail": "Access denied"})
+
+    if target.exists():
+        return JSONResponse(status_code=409, content={"detail": "Already exists"})
+
+    try:
+        target.mkdir(parents=True, exist_ok=False)
+        if scaffold:
+            for filename, content in _PROJECT_SCAFFOLD.items():
+                (target / filename).write_text(content)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return {"path": str(target), "name": target.name}
+
+
+@app.get("/api/secrets/env")
+async def get_env_secrets():
+    """Return the OpenClaw .env file as a list of key-value entries."""
+    if not _ENV_FILE.exists():
+        return {"entries": []}
+    try:
+        text = _ENV_FILE.read_text(errors="replace")
+        return {"entries": _parse_env_file(text)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+@app.put("/api/secrets/env")
+async def put_env_secrets(request: Request):
+    """Overwrite the OpenClaw .env file with the provided key-value entries."""
+    body = await request.json()
+    entries = body.get("entries", [])
+    try:
+        _ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ENV_FILE.write_text(_serialize_env_file(entries))
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
 @app.get("/api/fts/index/{workspace:path}")

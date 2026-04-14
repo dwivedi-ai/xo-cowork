@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sun, Moon, Monitor, RefreshCw, Check, Eye, EyeOff } from "lucide-react";
+import { Sun, Moon, Monitor, Check, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { IS_DESKTOP } from "@/lib/constants";
@@ -141,36 +142,6 @@ export function GeneralTab() {
             </div>
           </>
         )}
-      </section>
-
-      <Separator />
-
-      {/* Language Section */}
-      <section>
-        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">
-          {t('language')}
-        </h2>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { value: "en", label: "English" },
-            { value: "zh", label: "中文" },
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => {
-                i18n.changeLanguage(value);
-                localStorage.setItem("xo-cowork-language", value);
-              }}
-              className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
-                i18n.language.startsWith(value)
-                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/5"
-                  : "border-[var(--border-default)] hover:bg-[var(--surface-secondary)]"
-              }`}
-            >
-              <span className="text-xs font-medium">{label}</span>
-            </button>
-          ))}
-        </div>
       </section>
 
       <Separator />

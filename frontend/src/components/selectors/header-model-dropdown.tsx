@@ -93,6 +93,14 @@ export function HeaderModelDropdown() {
       if (selectedModel) setSelectedModel(null);
       return;
     }
+    // OpenClaw bridge used to expose a single model id "openclaw"; migrate to per-agent ids (openclaw/main, …).
+    if (selectedModel === "openclaw" && selectedProviderId === "openclaw") {
+      const replacement = visibleModels.find((m) => m.provider_id === "openclaw" && m.id.startsWith("openclaw/"));
+      if (replacement) {
+        setSelectedModel(replacement.id, replacement.provider_id);
+        return;
+      }
+    }
     const modelExists = selectedModel && visibleModels.some((m) => m.id === selectedModel && m.provider_id === selectedProviderId);
     if (!modelExists) {
       let chosen: ModelInfo;

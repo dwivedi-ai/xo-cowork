@@ -15,3 +15,18 @@ export function resolveSessionId(
   if (pathSessionId === "_") return querySessionId ?? null;
   return pathSessionId;
 }
+
+export function getAgentRoute(agentId: string): string {
+  return IS_DESKTOP_BUILD
+    ? `/agents/_?agentId=${encodeURIComponent(agentId)}`
+    : `/agents/${agentId}`;
+}
+
+export function resolveAgentId(
+  pathAgentId?: string | null,
+  queryAgentId?: string | null,
+): string | null {
+  if (!pathAgentId) return queryAgentId ?? null;
+  if (pathAgentId === "_") return queryAgentId ?? null;
+  return pathAgentId;
+}

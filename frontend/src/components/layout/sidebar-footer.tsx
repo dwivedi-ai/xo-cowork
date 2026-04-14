@@ -1,6 +1,6 @@
 "use client";
 
-import { User, CreditCard, Settings, Key, Cpu } from "lucide-react";
+import { User, CreditCard, Settings, Cpu } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import Link from "next/link";
 import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
@@ -75,18 +75,8 @@ function ProviderStatusBadge() {
     );
   }
 
-  // BYOK provider
   if (activeProvider === "byok") {
-    return (
-      <Link
-        href="/settings?tab=providers"
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs hover:bg-[var(--surface-secondary)] transition-colors"
-      >
-        <Key className="h-3 w-3 text-[var(--color-success)]" />
-        <span className="text-[var(--text-secondary)]">{t('apiKey')}</span>
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)]" />
-      </Link>
-    );
+    return null;
   }
 
   // ChatGPT provider

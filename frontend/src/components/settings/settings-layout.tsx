@@ -3,43 +3,34 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, CreditCard, BarChart3, Brain } from "lucide-react";
+import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GeneralTab } from "@/components/settings/general-tab";
-import { ProvidersTab } from "@/components/settings/providers-tab";
-import { BillingTab } from "@/components/settings/billing-tab";
-import { UsageSkeleton } from "@/components/settings/usage-tab";
-import { MemoryTab } from "@/components/settings/memory-tab";
+import { SecretsTab } from "@/components/settings/secrets-tab";
 import { AutomationsTabContent } from "@/app/(main)/automations/content";
 import { PluginsTabContent } from "@/app/(main)/plugins/content";
 import { RemoteTabContent } from "@/app/(main)/remote/content";
-
-const UsageTab = dynamic(
-  () => import("@/components/settings/usage-tab").then((mod) => ({ default: mod.UsageTab })),
-  { ssr: false, loading: () => <UsageSkeleton /> },
-);
 
 const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
   { id: "providers", icon: Cpu, labelKey: "tabProviders" },
   { id: "automations", icon: Timer, labelKey: "tabAutomations" },
   { id: "plugins", icon: Plug, labelKey: "tabPlugins" },
-  { id: "remote", icon: Wifi, labelKey: "tabRemote" },
-  { id: "billing", icon: CreditCard, labelKey: "tabBilling" },
-  { id: "usage", icon: BarChart3, labelKey: "tabUsage" },
-  { id: "memory", icon: Brain, labelKey: "tabMemory" },
+  { id: "remote", icon: Wifi, labelKey: "tabChannels" },
+  { id: "secrets", icon: KeyRound, labelKey: "tabSecrets" },
 ] as const;
 
 type TabId = (typeof SETTINGS_TABS)[number]["id"];
 
 export default function SettingsPageClient() {
-  const { t } = useTranslation(["settings", "billing", "usage"]);
+  const { t } = useTranslation(["settings", "usage"]);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTab = (searchParams.get("tab") as TabId) || "general";
+  const rawTab = searchParams.get("tab");
+  const activeTab: TabId =
+    rawTab && SETTINGS_TABS.some((tab) => tab.id === rawTab) ? (rawTab as TabId) : "general";
 
   const navigateTab = useCallback(
     (tab: string) => {
@@ -108,13 +99,15 @@ export default function SettingsPageClient() {
           {/* Tab content */}
           <div className="min-w-0">
             {activeTab === "general" && <GeneralTab />}
-            {activeTab === "providers" && <ProvidersTab onNavigateTab={navigateTab} />}
+            {activeTab === "providers" && (
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] px-6 py-12 text-center">
+                <p className="text-sm text-[var(--text-secondary)]">{t("providersComingSoon")}</p>
+              </div>
+            )}
             {activeTab === "automations" && <AutomationsTabContent />}
             {activeTab === "plugins" && <PluginsTabContent />}
             {activeTab === "remote" && <RemoteTabContent />}
-            {activeTab === "billing" && <BillingTab onNavigateTab={navigateTab} />}
-            {activeTab === "usage" && <UsageTab />}
-            {activeTab === "memory" && <MemoryTab />}
+            {activeTab === "secrets" && <SecretsTab />}
           </div>
         </div>
       </div>

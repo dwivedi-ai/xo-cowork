@@ -206,7 +206,7 @@ export function ChatForm({ isGenerating, onSend, onStop, className, sessionId, d
     setUploading(true);
     try {
       const results = await Promise.all(
-        Array.from(files).map((f) => uploadFile(f))
+        Array.from(files).map((f) => uploadFile(f, effectiveWorkspace))
       );
       setAttachments((prev) => {
         const { merged, duplicateCount } = mergeAttachments(prev, results);
