@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
           source: "/gateway/:path*",
           destination: `${process.env.NEXT_PUBLIC_XO_COWORK_API_URL || "http://localhost:5002"}/gateway/:path*`,
         },
+        {
+          source: "/codex/:path*",
+          destination: `${process.env.NEXT_PUBLIC_XO_COWORK_API_URL || "http://localhost:5002"}/codex/:path*`,
+        },
       ];
     },
   }),

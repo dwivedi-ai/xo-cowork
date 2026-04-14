@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound } from "lucide-react";
+import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound, FileJson } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,8 @@ import { SecretsTab } from "@/components/settings/secrets-tab";
 import { AutomationsTabContent } from "@/app/(main)/automations/content";
 import { PluginsTabContent } from "@/app/(main)/plugins/content";
 import { RemoteTabContent } from "@/app/(main)/remote/content";
+import { CodexSetupPanel } from "@/components/settings/codex-setup-panel";
+import { ConfigTab } from "@/components/settings/config-tab";
 
 const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
@@ -20,6 +22,7 @@ const SETTINGS_TABS = [
   { id: "plugins", icon: Plug, labelKey: "tabPlugins" },
   { id: "remote", icon: Wifi, labelKey: "tabChannels" },
   { id: "secrets", icon: KeyRound, labelKey: "tabSecrets" },
+  { id: "config", icon: FileJson, labelKey: "tabConfig" },
 ] as const;
 
 type TabId = (typeof SETTINGS_TABS)[number]["id"];
@@ -99,15 +102,12 @@ export default function SettingsPageClient() {
           {/* Tab content */}
           <div className="min-w-0">
             {activeTab === "general" && <GeneralTab />}
-            {activeTab === "providers" && (
-              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] px-6 py-12 text-center">
-                <p className="text-sm text-[var(--text-secondary)]">{t("providersComingSoon")}</p>
-              </div>
-            )}
+            {activeTab === "providers" && <CodexSetupPanel />}
             {activeTab === "automations" && <AutomationsTabContent />}
             {activeTab === "plugins" && <PluginsTabContent />}
             {activeTab === "remote" && <RemoteTabContent />}
             {activeTab === "secrets" && <SecretsTab />}
+            {activeTab === "config" && <ConfigTab />}
           </div>
         </div>
       </div>

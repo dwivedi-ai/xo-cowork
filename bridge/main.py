@@ -1305,6 +1305,20 @@ def ollama_status():
     return {"binary_installed": False, "running": False}
 
 
+@app.get("/api/codex/status")
+def codex_status():
+    """Check whether Codex OAuth credentials exist in openclaw.json."""
+    try:
+        config = json.loads(OPENCLAW_JSON.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"is_connected": False, "email": ""}
+    profiles = config.get("auth", {}).get("profiles", {})
+    for pid, prof in profiles.items():
+        if prof.get("provider") == "openai-codex":
+            return {"is_connected": True, "email": prof.get("email", "")}
+    return {"is_connected": False, "email": ""}
+
+
 @app.get("/api/config/openai-subscription")
 def openai_subscription():
     return {"is_connected": False, "email": "", "needs_reauth": False}
@@ -1333,6 +1347,37 @@ def ollama_config():
 @app.get("/api/config/local")
 def local_provider():
     return {"available": False}
+
+
+# ── Sensitive-field masking patterns ────────────────────────────────────────
+_SENSITIVE_KEYS = {"botToken", "apiKey", "api_key", "token", "secret", "password"}
+
+
+def _mask_value(v: str) -> str:
+    if len(v) <= 8:
+        return "****"
+    return v[:4] + "*" * (len(v) - 8) + v[-4:]
+
+
+def _mask_sensitive(obj: object) -> object:
+    """Recursively mask sensitive fields in a JSON-like structure."""
+    if isinstance(obj, dict):
+        return {
+            k: (_mask_value(v) if isinstance(v, str) and k in _SENSITIVE_KEYS else _mask_sensitive(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_mask_sensitive(item) for item in obj]
+    return obj
+
+
+@app.get("/api/config/openclaw")
+def get_openclaw_config():
+    """Return the full openclaw.json with sensitive fields masked."""
+    cfg = load_openclaw_config()
+    if not cfg:
+        return JSONResponse(status_code=404, content={"detail": "openclaw.json not found"})
+    return _mask_sensitive(cfg)
 
 
 @app.post("/api/sessions")
