@@ -11,6 +11,7 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ import { useAgents, useCreateAgent } from "@/hooks/use-agents";
 import { useSessions } from "@/hooks/use-sessions";
 import { useActiveSessionId } from "@/hooks/use-active-session-id";
 import { ApiError } from "@/lib/api";
-import { getChatRoute } from "@/lib/routes";
+import { getAgentRoute, getChatRoute } from "@/lib/routes";
 import type { SessionResponse } from "@/types/session";
 
 function formatAgentCreateError(err: unknown): string {
@@ -50,28 +51,42 @@ interface AgentNodeProps {
 }
 
 function AgentNode({ name, sessions, activeSessionId, onSelectSession }: AgentNodeProps) {
+  const { t } = useTranslation("common");
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
+      <div
         className={cn(
           "flex items-center gap-1.5 w-full py-1.5 px-2 text-[13px] rounded-lg transition-colors",
-          "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
+          "text-[var(--text-secondary)] hover:bg-[var(--sidebar-active)]",
         )}
       >
-        {isOpen ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-        )}
-        <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
-        <span className="truncate capitalize">{name}</span>
-        <span className="ml-auto text-[11px] text-[var(--text-tertiary)] shrink-0 tabular-nums">
-          {sessions.length}
-        </span>
-      </button>
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex flex-1 min-w-0 items-center gap-1.5 text-left rounded-md hover:text-[var(--text-primary)]"
+        >
+          {isOpen ? (
+            <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+          )}
+          <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+          <span className="truncate capitalize">{name}</span>
+        </button>
+        <button
+          type="button"
+          className="shrink-0 p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-secondary)]"
+          aria-label={t("editAgent")}
+          title={t("editAgent")}
+          onClick={() => router.push(getAgentRoute(name))}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+        </button>
+        <span className="text-[11px] text-[var(--text-tertiary)] shrink-0 tabular-nums">{sessions.length}</span>
+      </div>
 
       {isOpen && (
         <div className="ml-3">
@@ -156,7 +171,7 @@ export function AgentsExplorer() {
     }
     // Assign sessions to agents
     for (const session of sessions) {
-      const agentName = session.directory || "default";
+      const agentName = session.agent || session.directory || "default";
       if (!map.has(agentName)) map.set(agentName, []);
       map.get(agentName)!.push(session);
     }

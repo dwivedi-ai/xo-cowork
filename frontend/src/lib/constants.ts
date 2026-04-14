@@ -211,6 +211,7 @@ export const API = {
     WARMUP: "/api/ollama/warmup",
   },
   AGENTS: "/api/agents",
+  AGENT: (id: string) => `/api/agents/${encodeURIComponent(id)}` as const,
   MODELS: "/api/models",
   TOOLS: "/api/tools",
   SKILLS: {

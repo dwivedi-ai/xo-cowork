@@ -25,6 +25,7 @@ export interface SessionResponse {
   project_id: string | null;
   parent_id: string | null;
   slug: string | null;
+  agent: string | null;
   directory: string | null;
   title: string | null;
   version: number;

@@ -81,7 +81,7 @@ export function useChat(currentSessionId?: string) {
           attachments: attachments ?? [],
           permission_presets: hasActivePresets ? permissionPresets : null,
           reasoning: settingsState.reasoningEnabled,
-          workspace: settingsState.workspaceDirectory,
+          workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
         });
 
         chatState.startGeneration(res.stream_id, res.session_id);
@@ -99,7 +99,8 @@ export function useChat(currentSessionId?: string) {
             project_id: null,
             parent_id: null,
             slug: null,
-            directory: settingsState.workspaceDirectory || null,
+            agent: null,
+            directory: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
             title: text.trim().slice(0, 60),
             version: 0,
             summary_additions: 0,
@@ -225,7 +226,7 @@ export function useChat(currentSessionId?: string) {
           attachments: attachments ?? [],
           permission_presets: hasActivePresets ? permissionPresets : null,
           reasoning: settingsState.reasoningEnabled,
-          workspace: settingsState.workspaceDirectory,
+          workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
         });
 
         chatState.startGeneration(res.stream_id, res.session_id);
