@@ -191,6 +191,7 @@ export const API = {
     OPENAI_SUBSCRIPTION_MANUAL_CALLBACK: "/api/config/openai-subscription/manual-callback",
     OLLAMA: "/api/config/ollama",
     LOCAL_PROVIDER: "/api/config/local",
+    OPENCLAW: "/api/config/openclaw",
   },
   FTS: {
     INDEX: (workspace: string, sessionId?: string) =>
@@ -277,6 +278,12 @@ export const API = {
     REFRESH: "/api/workspace-memory/refresh",
     EXPORT: "/api/workspace-memory/export",
   },
+  CODEX: {
+    STATUS: "/api/codex/status",
+    SETUP: "/codex/setup",
+    CALLBACK: "/codex/setup/callback",
+    SETUP_STATUS: (sessionId: string) => `/codex/setup/status/${sessionId}` as const,
+  },
   HEALTH: "/health",
   GATEWAY: {
     RESTART: "/gateway/restart",
@@ -314,10 +321,12 @@ export const queryKeys = {
   xoCoworkAccount: ["xoCoworkAccount"] as const,
   openaiSubscription: ["openaiSubscription"] as const,
   localProvider: ["localProvider"] as const,
+  openclawConfig: ["openclawConfig"] as const,
   ollamaStatus: ["ollamaStatus"] as const,
   connectors: ["connectors"] as const,
   channels: ["channels"] as const,
   openclawStatus: ["openclawStatus"] as const,
+  codexStatus: ["codexStatus"] as const,
   plugins: {
     all: ["plugins"] as const,
     detail: (name: string) => ["plugins", name] as const,

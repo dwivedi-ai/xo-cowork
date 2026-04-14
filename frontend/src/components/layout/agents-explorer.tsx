@@ -259,7 +259,6 @@ function AgentNode({ name, workspacePath, sessions, activeSessionId, onSelectSes
   const { t } = useTranslation("common");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   return (
     <div>
@@ -295,55 +294,26 @@ function AgentNode({ name, workspacePath, sessions, activeSessionId, onSelectSes
       </div>
 
       {isOpen && (
-        <div className="ml-3">
-          {/* Agent Config section */}
-          {workspacePath && (
-            <AgentConfigSection workspacePath={workspacePath} />
-          )}
-
-          {/* Sessions section */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setSessionsOpen(!sessionsOpen)}
-              className={cn(
-                "flex items-center gap-1.5 w-full py-1 px-2 text-[13px] rounded-lg transition-colors",
-                "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
-              )}
-            >
-              {sessionsOpen ? (
-                <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-              ) : (
-                <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-              )}
-              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
-              <span className="truncate">Sessions</span>
-              <span className="ml-auto text-[11px] text-[var(--text-tertiary)] tabular-nums">{sessions.length}</span>
-            </button>
-            {sessionsOpen && (
-              <div className="ml-5">
-                {sessions.length === 0 ? (
-                  <p className="px-3 py-1 text-[11px] text-[var(--text-tertiary)]">No sessions</p>
-                ) : (
-                  sessions.map((session) => (
-                    <button
-                      key={session.id}
-                      onClick={() => onSelectSession(session.id)}
-                      className={cn(
-                        "flex items-center gap-1.5 w-full py-1 px-2 rounded-lg text-[13px] transition-colors truncate",
-                        session.id === activeSessionId
-                          ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] ring-1 ring-[var(--sidebar-active-border)]"
-                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
-                      )}
-                    >
-                      <MessageSquare className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-                      <span className="truncate">{session.title || "Untitled"}</span>
-                    </button>
-                  ))
+        <div className="ml-5">
+          {sessions.length === 0 ? (
+            <p className="px-3 py-1 text-[11px] text-[var(--text-tertiary)]">No sessions</p>
+          ) : (
+            sessions.map((session) => (
+              <button
+                key={session.id}
+                onClick={() => onSelectSession(session.id)}
+                className={cn(
+                  "flex items-center gap-1.5 w-full py-1 px-2 rounded-lg text-[13px] transition-colors truncate",
+                  session.id === activeSessionId
+                    ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] ring-1 ring-[var(--sidebar-active-border)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
                 )}
-              </div>
-            )}
-          </div>
+              >
+                <MessageSquare className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+                <span className="truncate">{session.title || "Untitled"}</span>
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>

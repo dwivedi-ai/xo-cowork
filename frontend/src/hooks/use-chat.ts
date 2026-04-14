@@ -72,8 +72,17 @@ export function useChat(currentSessionId?: string) {
         };
         const hasActivePresets = Object.values(permissionPresets).some(Boolean);
 
+        // Inject workspace context for project-scoped new sessions
+        const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+        const ws = settingsState.workspaceDirectory;
+        const isProjectScoped =
+          !currentSessionId && ws && ws !== WORKSPACE_ROOT && ws.startsWith(WORKSPACE_ROOT + "/");
+        const promptText = isProjectScoped
+          ? `[CONTEXT] Working directory for this session: ${ws}\nRefer to AGENTS.md, WORKSPACE.md, and OBJECTIVES.md in this directory for project instructions, workspace details, and objectives. All files you create or modify must be within this directory.\n\n${text.trim()}`
+          : text.trim();
+
         const res = await api.post<PromptResponse>(API.CHAT.PROMPT, {
-          text: text.trim(),
+          text: promptText,
           session_id: currentSessionId ?? null,
           model: settingsState.selectedModel,
           provider_id: settingsState.selectedProviderId,
