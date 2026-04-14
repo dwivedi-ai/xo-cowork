@@ -36,7 +36,7 @@ The frontend runs on `http://localhost:3000`.
 ```bash
 cd bridge
 uv sync
-uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uv run python main.py
 ```
 
 The bridge runs on `http://localhost:8000` and proxies requests to OpenClaw.
