@@ -1505,11 +1505,143 @@ def _serialize_env_file(entries: list[dict]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+_PROJECT_SCAFFOLD: dict[str, str] = {
+    "WORKSPACE.md": """\
+# WORKSPACE.md - Project Overview
+
+This file is the source of truth for what this project is and where it stands.
+The AI reads it at the start of every session to get up to speed quickly.
+Keep it short and accurate — update it as the project evolves.
+
+## Purpose
+
+<!-- What does this project do? What problem does it solve?
+     One or two sentences is enough. -->
+
+## Stack & Structure
+
+<!-- Key technologies, frameworks, or tools in use.
+     Example:
+     - Language: Python 3.12
+     - Framework: FastAPI
+     - Database: PostgreSQL
+     - Frontend: Next.js (App Router) -->
+
+## Status
+
+<!-- Current state of the project. What's working, what's in progress?
+     Example:
+     - Auth: done
+     - API: in progress
+     - UI: not started -->
+
+## Important Paths
+
+<!-- Key files or directories the AI should know about.
+     Example:
+     - Entry point: src/main.py
+     - Config: .env
+     - Docs: docs/ -->
+
+---
+""",
+    "AGENTS.md": """\
+# AGENTS.md - Agent Instructions
+
+This file tells the AI how to behave inside this project.
+Think of it as a standing brief — rules, preferences, and context that apply
+to every conversation in this workspace.
+
+## Behaviour Rules
+
+<!-- How should the AI operate here? What should it always or never do?
+     Example:
+     - Always run tests before marking a task done
+     - Never delete files without confirming first
+     - Prefer editing existing files over creating new ones
+     - Use British English in all output -->
+
+## Code Style
+
+<!-- Project-specific conventions the AI must follow.
+     Example:
+     - 2-space indentation, no semicolons (JS/TS)
+     - Type hints required on all functions (Python)
+     - Commit messages: conventional commits format -->
+
+## Context the AI Should Know
+
+<!-- Background the AI needs but that won't be obvious from the code.
+     Example:
+     - This project is a rewrite of a legacy PHP app
+     - The client is non-technical — keep explanations simple
+     - Rate limits on the external API: 100 req/min -->
+
+## Off-Limits
+
+<!-- Anything the AI must not touch or change without explicit instruction.
+     Example:
+     - Do not modify database migrations
+     - Do not change the public API contract -->
+
+---
+""",
+    "OBJECTIVES.md": """\
+# OBJECTIVES.md - Goals & Tasks
+
+This file tracks what needs to get done.
+Update it regularly — move tasks between sections as work progresses.
+The AI will use this to understand priorities and pick up where you left off.
+
+## Goals
+
+<!-- The high-level outcomes you want to achieve.
+     These should be stable and rarely change.
+     Example:
+     - Launch a working MVP by end of month
+     - Reduce API response time to under 200ms
+     - Pass all existing tests with zero regressions -->
+
+## Current Tasks
+
+<!-- What you're actively working on right now.
+     Be specific so the AI can take action.
+     Example:
+     - [ ] Add input validation to the /register endpoint
+     - [ ] Write unit tests for the auth module
+     - [ ] Fix the 500 error on empty search results -->
+
+## Backlog
+
+<!-- Things to do later, in rough priority order.
+     Example:
+     - [ ] Add rate limiting to the public API
+     - [ ] Set up CI/CD pipeline
+     - [ ] Write onboarding docs -->
+
+## Done
+
+<!-- Completed items — keep a record so the AI understands what changed.
+     Example:
+     - [x] Set up project structure
+     - [x] Implement JWT authentication -->
+
+---
+""",
+}
+
+
 @app.post("/api/files/mkdir")
 async def make_directory(request: Request):
-    """Create a new directory under the user's home directory."""
+    """Create a new directory under the user's home directory.
+
+    Pass ``scaffold: true`` to also create WORKSPACE.md, AGENTS.md, and
+    OBJECTIVES.md inside the new directory.
+    """
     body = await request.json()
     raw_path = body.get("path")
+    scaffold = bool(body.get("scaffold", False))
+
     if not raw_path:
         return JSONResponse(status_code=400, content={"detail": "Missing path"})
 
@@ -1524,6 +1656,9 @@ async def make_directory(request: Request):
 
     try:
         target.mkdir(parents=True, exist_ok=False)
+        if scaffold:
+            for filename, content in _PROJECT_SCAFFOLD.items():
+                (target / filename).write_text(content)
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
 

@@ -203,7 +203,7 @@ export function ProjectExplorer() {
     if (!name) return;
     setCreating(true);
     try {
-      await api.post(API.FILES.MKDIR, { path: `${WORKSPACE_ROOT}/${name}` });
+      await api.post(API.FILES.MKDIR, { path: `${WORKSPACE_ROOT}/${name}`, scaffold: true });
       setAddingFolder(false);
       setFolderName("");
       await loadRoot();
