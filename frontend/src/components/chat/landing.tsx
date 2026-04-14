@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { ChatForm } from "./chat-form";
 import { ChatHeader } from "./chat-header";
+import { ProjectTabs } from "./project-tabs";
 import { OfflineOverlay } from "@/components/layout/offline-overlay";
 import { StreamingMessage } from "@/components/messages/assistant-message";
 import { FileChip } from "./file-chip";
@@ -92,8 +93,6 @@ export function Landing() {
     if (!state.isGenerating) {
       state.reset();
     }
-    // New chat starts with no workspace restriction (entire computer)
-    useSettingsStore.getState().setWorkspaceDirectory(null);
     // Close right-side panels when landing page mounts (new chat / after delete)
     useArtifactStore.getState().clearAll();
     useActivityStore.getState().close();
@@ -170,21 +169,55 @@ export function Landing() {
     );
   }
 
+  // Derive project info from the selected workspace
+  const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+  const isProjectSelected = globalWorkspace && globalWorkspace !== "." && globalWorkspace.startsWith(WORKSPACE_ROOT + "/");
+  const projectName = isProjectSelected
+    ? globalWorkspace!.split("/").pop() ?? ""
+    : "";
+
   return (
     <div className="relative flex flex-1 flex-col h-full overflow-hidden">
       <OfflineOverlay />
       <ChatHeader />
 
-      <div className="flex flex-1 flex-col items-center justify-center px-4 pb-8">
-        <div className="w-full max-w-3xl xl:max-w-4xl space-y-8">
+      <div className="flex flex-1 flex-col items-center px-4 pb-8 overflow-y-auto">
+        <div className="w-full max-w-3xl xl:max-w-4xl space-y-8 my-auto py-8">
           {/* Greeting */}
           <div className="text-center pb-2">
-            <h1 className="text-3xl sm:text-4xl font-medium text-[var(--text-primary)] tracking-tight mb-2">
-              {t('greeting')}
-            </h1>
-            <p className="text-sm text-[var(--text-secondary)] max-w-xl mx-auto">
-              {t('subtitle')}
-            </p>
+            <AnimatePresence mode="wait">
+              {isProjectSelected ? (
+                <motion.div
+                  key="project-greeting"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <h1 className="text-3xl sm:text-4xl font-medium text-[var(--text-primary)] tracking-tight mb-2 capitalize">
+                    {projectName}
+                  </h1>
+                  <p className="text-sm text-[var(--text-secondary)] max-w-xl mx-auto">
+                    What would you like to work on in this project?
+                  </p>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="default-greeting"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <h1 className="text-3xl sm:text-4xl font-medium text-[var(--text-primary)] tracking-tight mb-2">
+                    {t('greeting')}
+                  </h1>
+                  <p className="text-sm text-[var(--text-secondary)] max-w-xl mx-auto">
+                    {t('subtitle')}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Input — the focal point */}
@@ -195,68 +228,79 @@ export function Landing() {
             directory={globalWorkspace}
           />
 
-          {/* Suggestion chips — below input */}
-          <div className="flex flex-wrap justify-center gap-2 pt-1">
-            {starters.map((starter) => (
-              <button
-                key={starter.textKey}
-                onClick={() => useArtifactStore.getState().requestFix(t(starter.promptKey))}
-                disabled={isGenerating}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-heavy)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
-              >
-                <starter.icon className="h-3.5 w-3.5 shrink-0" />
-                <span>{t(starter.textKey)}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Capabilities grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4">
-            {capabilities.map((capability, i) => (
-              <motion.div
-                key={capability.titleKey}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08, duration: 0.3 }}
-                className="group rounded-lg border border-[var(--border-default)] p-3 hover:border-[var(--border-heavy)] hover:bg-[var(--surface-secondary)] hover:-translate-y-0.5 transition-all"
-              >
-                <capability.icon className="h-5 w-5 text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] transition-colors mb-2" />
-                <h3 className="text-[13px] font-semibold text-[var(--text-primary)] mb-0.5">
-                  {t(capability.titleKey)}
-                </h3>
-                <p className="text-[11px] text-[var(--text-tertiary)] leading-snug">
-                  {t(capability.descKey)}
-                </p>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* First-use feature hints */}
-          <AnimatePresence>
-            {showHints && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ delay: 0.5, duration: 0.4 }}
-                className="flex flex-wrap justify-center gap-2 pt-2"
-              >
-                {[
-                  { icon: Keyboard, label: `${isMac ? "\u2318" : "Ctrl"}+K new chat` },
-                  { icon: Upload, label: "Drag files to attach" },
-                  { icon: CornerDownLeft, label: "Enter to send, Shift+Enter for newline" },
-                ].map((hint) => (
-                  <span
-                    key={hint.label}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)] bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-full px-2.5 py-1"
+          {/* Project tabs — shown when a project is selected */}
+          {isProjectSelected ? (
+            <ProjectTabs
+              key={globalWorkspace!}
+              projectPath={globalWorkspace!}
+              projectName={projectName}
+            />
+          ) : (
+            <>
+              {/* Suggestion chips — below input */}
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                {starters.map((starter) => (
+                  <button
+                    key={starter.textKey}
+                    onClick={() => useArtifactStore.getState().requestFix(t(starter.promptKey))}
+                    disabled={isGenerating}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-heavy)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                   >
-                    <hint.icon className="h-3 w-3 shrink-0" />
-                    {hint.label}
-                  </span>
+                    <starter.icon className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t(starter.textKey)}</span>
+                  </button>
                 ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
+
+              {/* Capabilities grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4">
+                {capabilities.map((capability, i) => (
+                  <motion.div
+                    key={capability.titleKey}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.08, duration: 0.3 }}
+                    className="group rounded-lg border border-[var(--border-default)] p-3 hover:border-[var(--border-heavy)] hover:bg-[var(--surface-secondary)] hover:-translate-y-0.5 transition-all"
+                  >
+                    <capability.icon className="h-5 w-5 text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] transition-colors mb-2" />
+                    <h3 className="text-[13px] font-semibold text-[var(--text-primary)] mb-0.5">
+                      {t(capability.titleKey)}
+                    </h3>
+                    <p className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                      {t(capability.descKey)}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* First-use feature hints */}
+              <AnimatePresence>
+                {showHints && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: 0.5, duration: 0.4 }}
+                    className="flex flex-wrap justify-center gap-2 pt-2"
+                  >
+                    {[
+                      { icon: Keyboard, label: `${isMac ? "\u2318" : "Ctrl"}+K new chat` },
+                      { icon: Upload, label: "Drag files to attach" },
+                      { icon: CornerDownLeft, label: "Enter to send, Shift+Enter for newline" },
+                    ].map((hint) => (
+                      <span
+                        key={hint.label}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)] bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-full px-2.5 py-1"
+                      >
+                        <hint.icon className="h-3 w-3 shrink-0" />
+                        {hint.label}
+                      </span>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          )}
         </div>
       </div>
     </div>
