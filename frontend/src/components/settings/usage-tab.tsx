@@ -38,11 +38,10 @@ function formatCost(cost: number, tokens: number = 0): string {
   if (cost === 0 && tokens > 0) {
     return "\u2014";
   }
-  const credits = cost * 100;
-  if (credits === 0) return "0 cr";
-  if (credits < 0.1) return `${credits.toFixed(2)} cr`;
-  if (credits < 1) return `${credits.toFixed(1)} cr`;
-  return `${credits.toFixed(1)} cr`;
+  if (cost === 0) return "$0.00";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  if (cost < 1) return `$${cost.toFixed(3)}`;
+  return `$${cost.toFixed(2)}`;
 }
 
 function formatTokens(count: number): string {
@@ -76,7 +75,7 @@ function formatModelName(modelId: string): string {
 }
 
 function tokenTotal(t: TokenBreakdown): number {
-  return t.input + t.output + t.reasoning;
+  return t.input + t.output + t.reasoning + t.cache_read + t.cache_write;
 }
 
 interface BalanceData {
@@ -234,6 +233,8 @@ function TokenBreakdownBar({ tokens }: { tokens: TokenBreakdown }) {
     { label: t('input'), value: tokens.input, color: "var(--brand-primary)" },
     { label: t('output'), value: tokens.output, color: "var(--color-success)" },
     { label: t('reasoning'), value: tokens.reasoning, color: "var(--color-warning)" },
+    { label: t('cacheRead'), value: tokens.cache_read, color: "var(--color-info, #60a5fa)" },
+    { label: t('cacheWrite'), value: tokens.cache_write, color: "var(--color-destructive)" },
   ].filter((s) => s.value > 0);
 
   return (

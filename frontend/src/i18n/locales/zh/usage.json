@@ -8,7 +8,7 @@
   "quotaHighUsage": "本周使用偏高：{{used}} / {{limit}}",
   "resetsAtUtc": "每周五 12:00 UTC 重置",
   "dailyTrend": "每日趋势",
-  "trendMetricCredits": "积分",
+  "trendMetricCredits": "费用",
   "trendMetricTokens": "Tokens",
   "topModelInsight": "本周期主要模型 {{model}} 贡献了 {{percent}} 的用量。",
   "modelShare": "占比",
