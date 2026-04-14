@@ -8,6 +8,12 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  File,
+  FileCode,
+  FileImage,
+  FileText,
+  FolderClosed,
+  FolderOpen,
   Loader2,
   MessageSquare,
   Plus,
@@ -26,8 +32,11 @@ import {
 import { useAgents, useCreateAgent } from "@/hooks/use-agents";
 import { useSessions } from "@/hooks/use-sessions";
 import { useActiveSessionId } from "@/hooks/use-active-session-id";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { API } from "@/lib/constants";
 import { getAgentRoute, getChatRoute } from "@/lib/routes";
+import { useArtifactStore } from "@/stores/artifact-store";
+import { artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
 import type { SessionResponse } from "@/types/session";
 
 function formatAgentCreateError(err: unknown): string {
@@ -43,17 +52,214 @@ function formatAgentCreateError(err: unknown): string {
   return "Unknown error";
 }
 
+/* ------------------------------------------------------------------ */
+/*  File-tree helpers (workspace config browser)                      */
+/* ------------------------------------------------------------------ */
+
+interface DirEntry {
+  name: string;
+  path: string;
+}
+
+interface ListDirectoryResponse {
+  path: string;
+  parent: string | null;
+  dirs: DirEntry[];
+  files: DirEntry[];
+}
+
+function configFileIcon(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const codeExts = new Set([
+    "ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "c", "cpp", "h",
+    "css", "scss", "html", "json", "yaml", "yml", "toml", "xml", "sh",
+    "md", "mdx", "sql", "rb", "php", "swift", "kt", "vue", "svelte",
+  ]);
+  const imageExts = new Set(["png", "jpg", "jpeg", "gif", "svg", "ico", "webp"]);
+  if (codeExts.has(ext)) return FileCode;
+  if (imageExts.has(ext)) return FileImage;
+  if (ext === "txt" || ext === "log" || ext === "csv") return FileText;
+  return File;
+}
+
+function ConfigFolderNode({ name, path, depth }: { name: string; path: string; depth: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [children, setChildren] = useState<{ dirs: DirEntry[]; files: DirEntry[] } | null>(null);
+
+  const toggle = useCallback(async () => {
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    if (!children) {
+      setLoading(true);
+      try {
+        const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, { path });
+        setChildren({ dirs: res.dirs, files: res.files });
+      } catch {
+        setChildren({ dirs: [], files: [] });
+      } finally {
+        setLoading(false);
+      }
+    }
+    setIsOpen(true);
+  }, [isOpen, children, path]);
+
+  const Icon = isOpen ? FolderOpen : FolderClosed;
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
+
+  return (
+    <div>
+      <button
+        onClick={toggle}
+        className={cn(
+          "flex items-center gap-1.5 w-full py-1 text-[13px] text-[var(--text-secondary)]",
+          "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-lg transition-colors",
+        )}
+        style={{ paddingLeft: `${depth * 10 + 6}px`, paddingRight: "6px" }}
+      >
+        {loading ? (
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+        ) : (
+          <Chevron className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+        )}
+        <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+        <span className="truncate">{name}</span>
+      </button>
+      {isOpen && children && (
+        <div>
+          {children.dirs.map((d) => (
+            <ConfigFolderNode key={d.path} name={d.name} path={d.path} depth={depth + 1} />
+          ))}
+          {children.files.map((f) => (
+            <ConfigFileNode key={f.path} name={f.name} path={f.path} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigFileNode({ name, path, depth }: { name: string; path: string; depth: number }) {
+  const Icon = configFileIcon(name);
+
+  const handleClick = () => {
+    const type = artifactTypeFromExtension(path) ?? "file-preview";
+    useArtifactStore.getState().openArtifact({
+      id: `agent-config-${path}`,
+      type,
+      title: name,
+      content: "",
+      filePath: path,
+      language: languageFromExtension(path),
+    });
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className={cn(
+        "flex items-center gap-1.5 w-full py-1 text-[13px] text-[var(--text-tertiary)]",
+        "hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] rounded-lg transition-colors cursor-pointer",
+      )}
+      style={{ paddingLeft: `${depth * 10 + 6 + 15}px`, paddingRight: "6px" }}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate text-left">{name}</span>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agent workspace file tree section                                 */
+/* ------------------------------------------------------------------ */
+
+function AgentConfigSection({ workspacePath }: { workspacePath: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [children, setChildren] = useState<{ dirs: DirEntry[]; files: DirEntry[] } | null>(null);
+
+  const toggle = useCallback(async () => {
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    if (!children) {
+      setLoading(true);
+      try {
+        const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, { path: workspacePath });
+        setChildren({ dirs: res.dirs, files: res.files });
+      } catch {
+        setChildren({ dirs: [], files: [] });
+      } finally {
+        setLoading(false);
+      }
+    }
+    setIsOpen(true);
+  }, [isOpen, children, workspacePath]);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        className={cn(
+          "flex items-center gap-1.5 w-full py-1 px-2 text-[13px] rounded-lg transition-colors",
+          "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
+        )}
+      >
+        {loading ? (
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+        ) : isOpen ? (
+          <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+        )}
+        {isOpen ? (
+          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+        ) : (
+          <FolderClosed className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+        )}
+        <span className="truncate">Agent Config</span>
+      </button>
+      {isOpen && children && (
+        <div className="ml-2">
+          {children.dirs.length === 0 && children.files.length === 0 ? (
+            <p className="px-3 py-1 text-[11px] text-[var(--text-tertiary)]">Empty workspace</p>
+          ) : (
+            <>
+              {children.dirs.map((d) => (
+                <ConfigFolderNode key={d.path} name={d.name} path={d.path} depth={1} />
+              ))}
+              {children.files.map((f) => (
+                <ConfigFileNode key={f.path} name={f.name} path={f.path} depth={1} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agent node (main collapsible row per agent)                       */
+/* ------------------------------------------------------------------ */
+
 interface AgentNodeProps {
   name: string;
+  workspacePath: string | null;
   sessions: SessionResponse[];
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
 }
 
-function AgentNode({ name, sessions, activeSessionId, onSelectSession }: AgentNodeProps) {
+function AgentNode({ name, workspacePath, sessions, activeSessionId, onSelectSession }: AgentNodeProps) {
   const { t } = useTranslation("common");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   return (
     <div>
@@ -90,25 +296,54 @@ function AgentNode({ name, sessions, activeSessionId, onSelectSession }: AgentNo
 
       {isOpen && (
         <div className="ml-3">
-          {sessions.length === 0 ? (
-            <p className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">No sessions</p>
-          ) : (
-            sessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => onSelectSession(session.id)}
-                className={cn(
-                  "flex items-center gap-1.5 w-full py-1 px-2 rounded-lg text-[13px] transition-colors truncate",
-                  session.id === activeSessionId
-                    ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] ring-1 ring-[var(--sidebar-active-border)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
-                )}
-              >
-                <MessageSquare className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
-                <span className="truncate">{session.title || "Untitled"}</span>
-              </button>
-            ))
+          {/* Agent Config section */}
+          {workspacePath && (
+            <AgentConfigSection workspacePath={workspacePath} />
           )}
+
+          {/* Sessions section */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setSessionsOpen(!sessionsOpen)}
+              className={cn(
+                "flex items-center gap-1.5 w-full py-1 px-2 text-[13px] rounded-lg transition-colors",
+                "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
+              )}
+            >
+              {sessionsOpen ? (
+                <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+              ) : (
+                <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+              )}
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+              <span className="truncate">Sessions</span>
+              <span className="ml-auto text-[11px] text-[var(--text-tertiary)] tabular-nums">{sessions.length}</span>
+            </button>
+            {sessionsOpen && (
+              <div className="ml-5">
+                {sessions.length === 0 ? (
+                  <p className="px-3 py-1 text-[11px] text-[var(--text-tertiary)]">No sessions</p>
+                ) : (
+                  sessions.map((session) => (
+                    <button
+                      key={session.id}
+                      onClick={() => onSelectSession(session.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 w-full py-1 px-2 rounded-lg text-[13px] transition-colors truncate",
+                        session.id === activeSessionId
+                          ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] ring-1 ring-[var(--sidebar-active-border)]"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)]",
+                      )}
+                    >
+                      <MessageSquare className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
+                      <span className="truncate">{session.title || "Untitled"}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -160,22 +395,24 @@ export function AgentsExplorer() {
     return sessionPages?.pages.flat() ?? [];
   }, [sessionPages]);
 
-  // Group sessions by agent directory
-  const agentSessionMap = useMemo(() => {
-    const map = new Map<string, SessionResponse[]>();
+  // Group sessions by agent directory + collect workspace paths
+  const { agentSessionMap, agentWorkspaceMap } = useMemo(() => {
+    const sessionMap = new Map<string, SessionResponse[]>();
+    const workspaceMap = new Map<string, string | null>();
     // Initialize with known agents
     if (agents) {
       for (const agent of agents) {
-        map.set(agent.name, []);
+        sessionMap.set(agent.name, []);
+        workspaceMap.set(agent.name, (agent.metadata?.workspace as string) ?? null);
       }
     }
     // Assign sessions to agents
     for (const session of sessions) {
       const agentName = session.agent || session.directory || "default";
-      if (!map.has(agentName)) map.set(agentName, []);
-      map.get(agentName)!.push(session);
+      if (!sessionMap.has(agentName)) sessionMap.set(agentName, []);
+      sessionMap.get(agentName)!.push(session);
     }
-    return map;
+    return { agentSessionMap: sessionMap, agentWorkspaceMap: workspaceMap };
   }, [agents, sessions]);
 
   const handleSelectSession = useCallback(
@@ -235,6 +472,7 @@ export function AgentsExplorer() {
               <AgentNode
                 key={agentName}
                 name={agentName}
+                workspacePath={agentWorkspaceMap.get(agentName) ?? null}
                 sessions={agentSessions}
                 activeSessionId={activeSessionId}
                 onSelectSession={handleSelectSession}
