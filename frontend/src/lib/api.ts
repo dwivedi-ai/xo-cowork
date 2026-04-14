@@ -1,4 +1,4 @@
-/** Lightweight fetch wrapper for the XO-Cowork backend API. */
+/** Lightweight fetch wrapper for the XO Cowork backend API. */
 
 import { getBackendUrl, IS_DESKTOP, resolveApiUrl } from "./constants";
 import { getRemoteConfig } from "./remote-connection";

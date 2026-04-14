@@ -1,6 +1,6 @@
 {
   "title": "账单",
-  "connectPrompt": "连接 XO-Cowork 账户以充值并使用高级模型。",
+  "connectPrompt": "连接 XO Cowork 账户以充值并使用高级模型。",
   "goToSettings": "前往设置",
   "balance": "余额",
   "credits": "余额",

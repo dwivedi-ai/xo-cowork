@@ -16,7 +16,7 @@ export interface SavedPermissionRule {
   timestamp: number;
 }
 
-export type ActiveProvider = "xo-cowork" | "byok" | "chatgpt" | "ollama" | "local" | "custom" | null;
+export type ActiveProvider = "byok" | "chatgpt" | "ollama" | "local" | "custom" | null;
 
 /**
  * Unified work mode — maps to agent + permission presets:

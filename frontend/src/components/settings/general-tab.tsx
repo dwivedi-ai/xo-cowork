@@ -153,7 +153,7 @@ export function GeneralTab() {
         <div className="grid grid-cols-2 gap-2">
           {[
             { value: "en", label: "English" },
-            { value: "zh", label: "中文" },
+            { value: "fr", label: "Français" },
           ].map(({ value, label }) => (
             <button
               key={value}
@@ -283,7 +283,7 @@ def hello(name: str) -> str:
     return f"Hello, {name}!"
 
 # Usage
-result = hello("XO-Cowork")
+result = hello("XO Cowork")
 print(result)
 \`\`\`
 
@@ -302,7 +302,7 @@ The code block above should feel like a distinct zone with premium quality.
 
 ## 弱结构文本测试
 
-项目名称：XO-Cowork
+项目名称：XO Cowork
 类型：AI 桌面助手
 技术栈：Tauri + Next.js + FastAPI
 开源协议：MIT

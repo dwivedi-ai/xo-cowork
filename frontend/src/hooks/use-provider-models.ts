@@ -9,7 +9,6 @@ import type { ActiveProvider } from "@/stores/settings-store";
 const NON_BYOK_PROVIDERS = new Set(["openai-subscription", "ollama", "xo-cowork-proxy"]);
 
 const PROVIDER_ID_MAP: Record<NonNullable<ActiveProvider>, string | null> = {
-  "xo-cowork": "xo-cowork-proxy",
   byok: null, // Special: show models from ALL BYOK providers
   chatgpt: "openai-subscription",
   ollama: "ollama",

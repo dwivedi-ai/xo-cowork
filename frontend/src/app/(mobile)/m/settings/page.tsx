@@ -372,7 +372,7 @@ export default function MobileSettingsPage() {
         <div className="rounded-2xl bg-[var(--surface-secondary)] border border-[var(--border-default)] p-4 space-y-2.5">
           <p className="text-[13px] font-medium">How to connect</p>
           <ol className="text-[12px] text-[var(--text-secondary)] space-y-1.5 list-decimal list-inside">
-            <li>Open XO-Cowork on your desktop</li>
+            <li>Open XO Cowork on your desktop</li>
             <li>Go to Settings &rarr; Remote Access</li>
             <li>Enable and scan the QR code</li>
           </ol>

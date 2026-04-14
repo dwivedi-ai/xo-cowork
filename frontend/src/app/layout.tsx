@@ -15,12 +15,14 @@ const jetbrainsMono = JetBrains_Mono({
 
 
 export const metadata: Metadata = {
-  title: "XO-Cowork",
+  title: "XO Cowork",
   description: "Your local AI assistant — private, powerful, personal",
   icons: {
     icon: "/favicon.svg",
+    apple: "/favicon.svg",
   },
   manifest: "/manifest.json",
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({

@@ -2,7 +2,7 @@
  * Remote connection state manager.
  *
  * Stores {url, token} in localStorage for persistent remote connections.
- * Used by mobile PWA to connect to a desktop XO-Cowork instance over the internet.
+ * Used by mobile PWA to connect to a desktop XO Cowork instance over the internet.
  */
 
 const STORAGE_KEY = "xocowork_remote_connection";

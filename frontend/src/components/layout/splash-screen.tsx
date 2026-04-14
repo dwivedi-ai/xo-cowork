@@ -15,7 +15,7 @@ export function AnimatedXoCoworkLogo({ size = 80 }: { size?: number }) {
       src="/favicon.svg"
       width={size}
       height={size}
-      alt="XO-Cowork"
+      alt="XO Cowork"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 1.0, ease: "easeInOut", delay: 0.2 }}
@@ -91,7 +91,7 @@ export function SplashScreen() {
             transition={{ duration: 0.6, delay: 1.4 }}
           >
             <h1 className="text-3xl font-semibold text-[var(--text-primary)] tracking-wide">
-              XO_COWORK
+              XO Cowork
             </h1>
             <p className="mt-2 text-sm text-[var(--text-tertiary)]">
               Your local AI assistant

@@ -16,7 +16,7 @@ export interface XoCoworkUser {
 interface AuthStore {
   /** Proxy URL (e.g. "https://api.xo-cowork.com") */
   proxyUrl: string;
-  /** JWT access token for the XO-Cowork proxy */
+  /** JWT access token for the XO Cowork proxy */
   accessToken: string;
   /** JWT refresh token */
   refreshToken: string;

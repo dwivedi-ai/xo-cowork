@@ -23,7 +23,7 @@ export function useMermaid() {
         mermaidInstance = await initPromise;
       }
 
-      // Theme configuration - map to XO-Cowork theme colors
+      // Theme configuration - map to XO Cowork theme colors
       const isDark = theme === "dark";
       mermaidInstance.initialize({
         startOnLoad: false,

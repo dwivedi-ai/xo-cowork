@@ -151,6 +151,6 @@
 
   "loadingModel": "正在加载模型到内存...",
   "setupProvider": "请先配置 AI 服务商以开始对话",
-  "setupProviderDesc": "连接 XO-Cowork 账号、添加 API 密钥，或配置本地模型。",
+  "setupProviderDesc": "连接 XO Cowork 账号、添加 API 密钥，或配置本地模型。",
   "configureSettings": "前往配置"
 }

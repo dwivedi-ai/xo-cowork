@@ -1,5 +1,5 @@
 /**
- * Direct API client for the XO-Cowork Cloud Proxy.
+ * Direct API client for the XO Cowork Cloud Proxy.
  *
  * Auth and billing calls go directly to the proxy server,
  * not through the local backend.

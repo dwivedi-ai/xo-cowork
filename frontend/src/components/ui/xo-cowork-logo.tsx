@@ -9,7 +9,7 @@ export function XoCoworkLogo({ size = 20, className }: XoCoworkLogoProps) {
       src="/favicon.svg"
       width={size}
       height={size}
-      alt="XO-Cowork"
+      alt="XO Cowork"
       className={className}
     />
   );

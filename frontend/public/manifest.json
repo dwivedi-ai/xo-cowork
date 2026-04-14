@@ -1,7 +1,7 @@
 {
-  "name": "OpenYak Remote",
-  "short_name": "OpenYak",
-  "description": "Remote control for your desktop OpenYak AI assistant",
+  "name": "XO Cowork",
+  "short_name": "XO Cowork",
+  "description": "Your local AI assistant — private, powerful, personal",
   "start_url": "/m",
   "display": "standalone",
   "background_color": "#09090b",

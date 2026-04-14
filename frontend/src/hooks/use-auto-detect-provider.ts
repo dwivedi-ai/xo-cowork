@@ -60,7 +60,6 @@ export function useAutoDetectProvider(): { hasProvider: boolean } {
   useEffect(() => {
     if (activeProvider !== null) return;
     if (openaiSubStatus?.is_connected) setActiveProvider("chatgpt");
-    else if (isConnected) setActiveProvider("xo-cowork");
     else if (localStatus?.is_connected) setActiveProvider("local");
     else if (keyStatus?.is_configured || hasAnyDirectProvider) setActiveProvider("byok");
     else if (ollamaConnected) setActiveProvider("ollama");

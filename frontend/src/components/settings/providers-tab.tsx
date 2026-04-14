@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, X, Check, Loader2, AlertCircle, LogOut, CreditCard, Mail, RotateCw, Cpu, Server, Plug } from "lucide-react";
-import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
+import { Eye, EyeOff, X, Check, Loader2, AlertCircle, LogOut, CreditCard, RotateCw, Cpu, Server, Plug } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSettingsStore, type ActiveProvider } from "@/stores/settings-store";
-import { useAuthStore, type XoCoworkUser } from "@/stores/auth-store";
 import { api, ApiError } from "@/lib/api";
-import { proxyApi, ProxyApiError } from "@/lib/proxy-api";
 import { API, IS_DESKTOP, queryKeys } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
 import type { ApiKeyStatus, ProviderInfo, LocalProviderStatus } from "@/types/usage";
@@ -29,11 +26,9 @@ interface ProvidersTabProps {
 export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
   const { t } = useTranslation('settings');
   const { activeProvider, setActiveProvider } = useSettingsStore();
-  const authStore = useAuthStore();
-
-  type ProviderMode = "xo-cowork" | "byok" | "chatgpt" | "ollama" | "local" | "custom";
+  type ProviderMode = "byok" | "chatgpt" | "ollama" | "local" | "custom";
   const [viewingProvider, setViewingProvider] = useState<ProviderMode>(
-    () => (activeProvider as ProviderMode) ?? "xo-cowork"
+    () => (activeProvider as ProviderMode) ?? "byok"
   );
 
   const [mounted, setMounted] = useState(false);
@@ -41,79 +36,9 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
   const [showKey, setShowKey] = useState(false);
   const qc = useQueryClient();
 
-  const [proxyUrlInput, setProxyUrlInput] = useState(
-    process.env.NEXT_PUBLIC_DEFAULT_PROXY_URL || "https://api.xo-cowork.com",
-  );
-  const [emailInput, setEmailInput] = useState("");
-  const [passwordInput, setPasswordInput] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [verificationStep, setVerificationStep] = useState(false);
-  const [codeInput, setCodeInput] = useState("");
   const [localBaseUrlInput, setLocalBaseUrlInput] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const syncXoCoworkAccountToBackend = async (proxyUrl: string, token: string, refreshToken?: string) => {
-    const payload = { proxy_url: proxyUrl, token, ...(refreshToken && { refresh_token: refreshToken }) };
-    try {
-      await api.post(API.CONFIG.XO_COWORK_ACCOUNT, payload);
-    } catch {
-      if (IS_DESKTOP) {
-        const backendUrl = await desktopAPI.getBackendUrl();
-        const res = await fetch(`${backendUrl}${API.CONFIG.XO_COWORK_ACCOUNT}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) return;
-      }
-      throw new Error("Failed to connect local backend");
-    }
-  };
-
-  const completeAuth = async (proxyUrl: string, tokens: { access_token: string; refresh_token: string }) => {
-    const res = await fetch(`${proxyUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    });
-    if (!res.ok) throw new Error("Failed to fetch profile");
-    const user = (await res.json()) as XoCoworkUser;
-    await syncXoCoworkAccountToBackend(proxyUrl, tokens.access_token, tokens.refresh_token);
-    authStore.setAuth({ proxyUrl, accessToken: tokens.access_token, refreshToken: tokens.refresh_token, user });
-    setActiveProvider("xo-cowork");
-    qc.invalidateQueries({ queryKey: queryKeys.apiKeyStatus });
-    qc.invalidateQueries({ queryKey: queryKeys.models });
-    setEmailInput(""); setPasswordInput(""); setCodeInput(""); setVerificationStep(false);
-  };
-
-  const loginMutation = useMutation({
-    mutationFn: async () => {
-      const proxyUrl = proxyUrlInput.replace(/\/$/, "");
-      if (authMode === "login") {
-        const tokens = await proxyApi.authPost<{ access_token: string; refresh_token: string }>(proxyUrl, "/api/auth/login", { email: emailInput, password: passwordInput });
-        await completeAuth(proxyUrl, tokens);
-        return { type: "done" as const };
-      } else {
-        await proxyApi.authPost<{ message: string; email: string }>(proxyUrl, "/api/auth/register", { email: emailInput, password: passwordInput });
-        return { type: "verification" as const };
-      }
-    },
-    onSuccess: (data) => { if (data.type === "verification") setVerificationStep(true); },
-  });
-
-  const verifyMutation = useMutation({
-    mutationFn: async () => {
-      const proxyUrl = proxyUrlInput.replace(/\/$/, "");
-      const tokens = await proxyApi.authPost<{ access_token: string; refresh_token: string }>(proxyUrl, "/api/auth/verify", { email: emailInput, code: codeInput });
-      await completeAuth(proxyUrl, tokens);
-    },
-  });
-
-  const resendMutation = useMutation({
-    mutationFn: async () => {
-      const proxyUrl = proxyUrlInput.replace(/\/$/, "");
-      await proxyApi.authPost(proxyUrl, "/api/auth/resend", { email: emailInput });
-    },
-    onSuccess: () => setCodeInput(""),
-  });
 
   const { data: keyStatus } = useQuery({ queryKey: queryKeys.apiKeyStatus, queryFn: () => api.get<ApiKeyStatus>(API.CONFIG.API_KEY) });
 
@@ -137,9 +62,7 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
   }, []);
 
   const fallbackToOtherProviders = () => {
-    if (authStore.isConnected) {
-      setActiveProvider("xo-cowork");
-    } else if (openaiSubStatus?.is_connected) {
+    if (openaiSubStatus?.is_connected) {
       setActiveProvider("chatgpt");
     } else if (keyStatus?.is_configured || (providers ?? []).some((p) => p.is_configured)) {
       setActiveProvider("byok");
@@ -153,23 +76,9 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
     queryFn: () => api.get<OpenAISubscriptionStatus>(API.CONFIG.OPENAI_SUBSCRIPTION),
   });
 
-  const disconnectMutation = useMutation({
-    mutationFn: () => api.delete(API.CONFIG.XO_COWORK_ACCOUNT),
-    onSuccess: () => {
-      authStore.logout();
-      qc.invalidateQueries({ queryKey: queryKeys.models });
-      qc.invalidateQueries({ queryKey: queryKeys.xoCoworkAccount });
-      if (activeProvider === "xo-cowork") {
-        if (openaiSubStatus?.is_connected) setActiveProvider("chatgpt");
-        else if (keyStatus?.is_configured) setActiveProvider("byok");
-        else setActiveProvider(null);
-      }
-    },
-  });
-
   const updateKey = useMutation({
     mutationFn: (apiKey: string) => api.post<ApiKeyStatus>(API.CONFIG.API_KEY, { api_key: apiKey }),
-    onSuccess: () => { setActiveProvider("byok"); qc.invalidateQueries({ queryKey: queryKeys.xoCoworkAccount }); qc.invalidateQueries({ queryKey: queryKeys.models }); setApiKeyInput(""); },
+    onSuccess: () => { setActiveProvider("byok"); qc.invalidateQueries({ queryKey: queryKeys.models }); setApiKeyInput(""); },
   });
 
   const deleteKey = useMutation({
@@ -178,8 +87,7 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
       qc.invalidateQueries({ queryKey: queryKeys.apiKeyStatus });
       qc.invalidateQueries({ queryKey: queryKeys.models });
       if (activeProvider === "byok") {
-        if (authStore.isConnected) setActiveProvider("xo-cowork");
-        else if (openaiSubStatus?.is_connected) setActiveProvider("chatgpt");
+        if (openaiSubStatus?.is_connected) setActiveProvider("chatgpt");
         else setActiveProvider(null);
       }
     },
@@ -334,8 +242,7 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
       refetchOpenaiSub();
       qc.invalidateQueries({ queryKey: queryKeys.models });
       if (activeProvider === "chatgpt") {
-        if (authStore.isConnected) setActiveProvider("xo-cowork");
-        else if (keyStatus?.is_configured) setActiveProvider("byok");
+        if (keyStatus?.is_configured) setActiveProvider("byok");
         else setActiveProvider(null);
       }
     },
@@ -378,7 +285,6 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
       {/* Provider cards */}
       <div className="grid grid-cols-3 gap-2">
         {([
-          { mode: "xo-cowork" as ProviderMode, label: t('xoCoworkAccount'), icon: Eye, connected: authStore.isConnected },
           { mode: "byok" as ProviderMode, label: t('ownApiKey'), icon: Eye, connected: !!keyStatus?.is_configured || (providers ?? []).some((p) => p.is_configured && !p.id.startsWith("custom_")) },
           { mode: "chatgpt" as ProviderMode, label: t('chatgptSubscription'), icon: CreditCard, connected: !!openaiSubStatus?.is_connected },
           { mode: "ollama" as ProviderMode, label: "Ollama", icon: Cpu, connected: ollamaConnected },
@@ -394,7 +300,7 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
                 : "border-[var(--border-default)] hover:bg-[var(--surface-secondary)]"
             }`}
           >
-            {mode === "xo-cowork" ? <XoCoworkLogo size={20} /> : <Icon className="h-5 w-5" />}
+            <Icon className="h-5 w-5" />
             <span className="text-xs font-medium text-center leading-tight">{label}</span>
             {mounted && connected && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--color-success)]" />}
             {activeProvider === mode && mounted && connected && (
@@ -403,61 +309,6 @@ export function ProvidersTab({ onNavigateTab }: ProvidersTabProps) {
           </button>
         ))}
       </div>
-
-      {/* XO-Cowork Account config */}
-      {viewingProvider === "xo-cowork" && (
-        <div>
-          <p className="text-xs text-[var(--text-secondary)] mb-3">{t('xoCoworkAccountDesc')}</p>
-          {authStore.isConnected && authStore.user ? (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-[var(--border-default)] p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-[var(--color-success)]" />
-                    <span className="text-xs text-[var(--text-secondary)]">{authStore.user.email}</span>
-                  </div>
-                  <span className="text-xs font-medium text-[var(--text-primary)]">
-                    {authStore.user.billing_mode === "credits"
-                      ? `$${(authStore.user.credit_balance / 100).toFixed(2)}`
-                      : `Free: ${Math.round(authStore.user.daily_free_tokens_used / 1000)}K / ${Math.round(authStore.user.daily_free_token_limit / 1000)}K tokens`}
-                  </span>
-                </div>
-                {authStore.user.billing_mode === "free" && (
-                  <div className="w-full bg-[var(--surface-tertiary)] rounded-full h-1.5">
-                    <div className="bg-[var(--brand-primary)] h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, (authStore.user.daily_free_tokens_used / authStore.user.daily_free_token_limit) * 100)}%` }} />
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => onNavigateTab?.("billing")}><CreditCard className="h-3.5 w-3.5 mr-1.5" />{t('buyCredits')}</Button>
-                <Button variant="ghost" size="sm" onClick={() => disconnectMutation.mutate()} disabled={disconnectMutation.isPending}><LogOut className="h-3.5 w-3.5 mr-1.5" />{t('disconnect')}</Button>
-              </div>
-            </div>
-          ) : verificationStep ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"><Mail className="h-3.5 w-3.5" /><span>{t('verificationSent')} <strong>{emailInput}</strong></span></div>
-              <Input type="text" value={codeInput} onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder={t('sixDigitCode')} className="font-mono text-center text-lg tracking-[0.3em]" maxLength={6} autoFocus />
-              <div className="flex items-center gap-2">
-                <Button variant="default" size="sm" onClick={() => verifyMutation.mutate()} disabled={codeInput.length !== 6 || verifyMutation.isPending}>{verifyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('verify')}</Button>
-                <Button variant="ghost" size="sm" onClick={() => resendMutation.mutate()} disabled={resendMutation.isPending}>{resendMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><RotateCw className="h-3.5 w-3.5 mr-1" />{t('resend')}</>}</Button>
-                <button onClick={() => { setVerificationStep(false); setCodeInput(""); }} className="text-xs text-[var(--text-tertiary)] hover:underline ml-auto">{t('back')}</button>
-              </div>
-              {verifyMutation.isError && <div className="flex items-center gap-1.5 text-xs text-[var(--color-destructive)]"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span>{verifyMutation.error instanceof ProxyApiError ? ((verifyMutation.error.body as Record<string, string> | undefined)?.detail ?? t('verificationFailed')) : t('verificationFailed')}</span></div>}
-              {resendMutation.isSuccess && <div className="flex items-center gap-1.5 text-xs text-[var(--color-success)]"><Check className="h-3.5 w-3.5 shrink-0" /><span>{t('newCodeSent')}</span></div>}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="Email" className="text-xs" autoComplete="one-time-code" data-form-type="other" />
-              <Input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} placeholder="Password (min 8 characters)" className="text-xs" autoComplete="one-time-code" data-form-type="other" />
-              <div className="flex items-center gap-2">
-                <Button variant="default" size="sm" onClick={() => loginMutation.mutate()} disabled={!emailInput || !passwordInput || loginMutation.isPending}>{loginMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : authMode === "login" ? t('signIn') : t('createAccount')}</Button>
-                <button onClick={() => setAuthMode(authMode === "login" ? "register" : "login")} className="text-xs text-[var(--brand-primary)] hover:underline">{authMode === "login" ? t('createAccountLink') : t('alreadyHaveAccount')}</button>
-              </div>
-              {loginMutation.isError && <div className="flex items-center gap-1.5 text-xs text-[var(--color-destructive)]"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span>{loginMutation.error instanceof ProxyApiError ? ((loginMutation.error.body as Record<string, string> | undefined)?.detail ?? t('authFailed')) : t('connectionFailed')}</span></div>}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Own API Key config */}
       {viewingProvider === "byok" && (

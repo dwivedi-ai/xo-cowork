@@ -212,7 +212,7 @@ export default function MobileNewTaskPage() {
               ref={textareaRef}
               value={text}
               onChange={handleTextChange}
-              placeholder="What should XO-Cowork do?"
+              placeholder="What should XO Cowork do?"
               rows={1}
               className="w-full resize-none bg-transparent text-[16px] leading-relaxed outline-none placeholder:text-[var(--text-tertiary)] min-h-[28px] max-h-[200px]"
               autoFocus

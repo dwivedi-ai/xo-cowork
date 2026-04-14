@@ -34,7 +34,7 @@ function MobileLoadingScreen() {
         <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-primary)] animate-spin" />
       </div>
       <p className="text-sm text-[var(--text-secondary)] animate-pulse">
-        Connecting to XO-Cowork...
+        Connecting to XO Cowork...
       </p>
     </div>
   );

@@ -557,7 +557,7 @@ export function useSSE(streamId: string | null) {
       // Refetch sessions to pick up the title (set synchronously before DONE now)
       queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
 
-      // Refresh billing balance from XO-Cowork proxy after each generation
+      // Refresh billing balance from XO Cowork proxy after each generation
       const auth = useAuthStore.getState();
       if (auth.isConnected) {
         proxyApi

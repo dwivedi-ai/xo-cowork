@@ -10,13 +10,13 @@ import enUsage from "./locales/en/usage.json";
 import enPlugins from "./locales/en/plugins.json";
 import enAutomations from "./locales/en/automations.json";
 
-import zhCommon from "./locales/zh/common.json";
-import zhChat from "./locales/zh/chat.json";
-import zhSettings from "./locales/zh/settings.json";
-import zhBilling from "./locales/zh/billing.json";
-import zhUsage from "./locales/zh/usage.json";
-import zhPlugins from "./locales/zh/plugins.json";
-import zhAutomations from "./locales/zh/automations.json";
+import frCommon from "./locales/fr/common.json";
+import frChat from "./locales/fr/chat.json";
+import frSettings from "./locales/fr/settings.json";
+import frBilling from "./locales/fr/billing.json";
+import frUsage from "./locales/fr/usage.json";
+import frPlugins from "./locales/fr/plugins.json";
+import frAutomations from "./locales/fr/automations.json";
 
 i18n
   .use(LanguageDetector)
@@ -32,14 +32,14 @@ i18n
         plugins: enPlugins,
         automations: enAutomations,
       },
-      zh: {
-        common: zhCommon,
-        chat: zhChat,
-        settings: zhSettings,
-        billing: zhBilling,
-        usage: zhUsage,
-        plugins: zhPlugins,
-        automations: zhAutomations,
+      fr: {
+        common: frCommon,
+        chat: frChat,
+        settings: frSettings,
+        billing: frBilling,
+        usage: frUsage,
+        plugins: frPlugins,
+        automations: frAutomations,
       },
     },
     fallbackLng: "en",

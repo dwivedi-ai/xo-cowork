@@ -99,7 +99,7 @@ export default function MobileTaskListPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-5 pt-[max(env(safe-area-inset-top),12px)] pb-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">XO-Cowork</h1>
+          <h1 className="text-xl font-semibold tracking-tight">XO Cowork</h1>
           <ConnectionDot status={healthStatus} />
         </div>
         <div className="flex items-center gap-1.5">

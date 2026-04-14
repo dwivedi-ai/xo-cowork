@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
-  <rect width="128" height="128" rx="28" fill="#000"/>
-  <text x="64" y="82" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="56" fill="#fff">XO</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 500 500" fill="none">
+  <rect width="500" height="500" rx="100" fill="#09090b"/>
+  <polyline stroke="#ffffff" stroke-width="15.38" fill="none" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round" points="36.99 165.84 118.47 247.31 31.16 334.61"/>
+  <polyline stroke="#83d63a" stroke-width="15.38" fill="none" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round" points="328.12 165.06 246.65 246.53 333.95 333.84"/>
+  <polyline stroke="#83d63a" stroke-width="15.38" fill="none" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round" points="380.51 165.06 461.99 246.53 374.68 333.84"/>
+  <polyline stroke="#ffffff" stroke-width="15.38" fill="none" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round" points="244.91 165.84 163.44 247.31 250.74 334.61"/>
 </svg>

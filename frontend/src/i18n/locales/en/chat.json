@@ -151,6 +151,6 @@
 
   "loadingModel": "Loading model into memory...",
   "setupProvider": "Set up an AI provider to start chatting",
-  "setupProviderDesc": "Connect your XO-Cowork account, add an API key, or set up a local model.",
+  "setupProviderDesc": "Connect your XO Cowork account, add an API key, or set up a local model.",
   "configureSettings": "Configure"
 }
