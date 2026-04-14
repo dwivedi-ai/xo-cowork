@@ -16,9 +16,12 @@ export interface FileSearchResult {
  * Uses raw fetch (not api.post) because multipart/form-data
  * requires the browser to set Content-Type with boundary automatically.
  */
-export async function uploadFile(file: File): Promise<FileAttachment> {
+export async function uploadFile(file: File, workspace?: string | null): Promise<FileAttachment> {
   const formData = new FormData();
   formData.append("file", file);
+  if (workspace) {
+    formData.append("workspace", workspace);
+  }
 
   const res = await fetch(resolveApiUrl(API.FILES.UPLOAD), {
     method: "POST",

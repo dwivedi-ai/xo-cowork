@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { ArrowLeft, Wifi, WifiOff, QrCode, Copy, RefreshCw, Shield, Check, Loader2, AlertTriangle, Download, Play, Square, RotateCw, Eye, EyeOff, ExternalLink, X, Unplug } from "lucide-react";
-import Link from "next/link";
+import { useState, useRef, useCallback } from "react";
+import { Loader2, Download, Play, Square, RotateCw, RefreshCw, Eye, EyeOff, ExternalLink, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { api } from "@/lib/api";
-import { API, IS_DESKTOP, getBackendUrl } from "@/lib/constants";
+import { API, getBackendUrl, resolveCoworkApiUrl } from "@/lib/constants";
+import { api, ApiError } from "@/lib/api";
 import {
   useChannels,
   useOpenClawStatus,
@@ -16,7 +15,7 @@ import {
   useAddChannel,
   useRemoveChannel,
 } from "@/hooks/use-channels";
-import { WhatsAppIcon, DiscordIcon, TelegramIcon, SlackIcon, FeishuIcon, SignalIcon, LineIcon, IMessageIcon } from "@/components/icons/platform-icons";
+import { WhatsAppIcon, DiscordIcon, TelegramIcon, SlackIcon } from "@/components/icons/platform-icons";
 import type { ChannelInfo, PlatformDef } from "@/types/channels";
 
 /* ------------------------------------------------------------------ */
@@ -24,230 +23,7 @@ import type { ChannelInfo, PlatformDef } from "@/types/channels";
 /* ------------------------------------------------------------------ */
 
 export function RemoteTabContent() {
-  const { t } = useTranslation("settings");
-  const [status, setStatus] = useState<{
-    enabled: boolean;
-    tunnel_url: string | null;
-    token_preview: string | null;
-    active_tasks: number;
-    tunnel_mode: string;
-    permission_mode: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState(false);
-  const [showQr, setShowQr] = useState(false);
-  const [qrBlobUrl, setQrBlobUrl] = useState<string | null>(null);
-  const [fullToken, setFullToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [permMode, setPermMode] = useState("auto");
-  const [tunnelChanged, setTunnelChanged] = useState(false);
-  const prevTunnelUrl = useRef<string | null>(null);
-
-  // Fetch QR image as blob URL to bypass Tauri CSP (img-src blocks http://127.0.0.1)
-  const fetchQrBlob = async () => {
-    try {
-      const backendUrl = IS_DESKTOP ? await getBackendUrl() : "";
-      const res = await fetch(`${backendUrl}${API.REMOTE.QR}?t=${Date.now()}`);
-      if (!res.ok) return;
-      const blob = await res.blob();
-      // Revoke previous blob URL to avoid memory leaks
-      setQrBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
-    } catch {}
-  };
-
-  const fetchStatus = async () => {
-    try {
-      const data = await api.get<typeof status>(API.REMOTE.STATUS);
-      setStatus(data);
-      if (data) {
-        setPermMode(data.permission_mode);
-
-        // Detect tunnel URL change — show warning to re-scan QR
-        if (prevTunnelUrl.current !== null && data.tunnel_url && data.tunnel_url !== prevTunnelUrl.current) {
-          setTunnelChanged(true);
-          // Auto-refresh QR code when URL changes
-          if (showQr) { fetchQrBlob(); }
-        }
-        prevTunnelUrl.current = data.tunnel_url ?? null;
-      }
-    } catch {
-      // Remote API not available
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchStatus(); }, []);
-
-  // Poll status every 30s to detect tunnel restarts
-  useEffect(() => {
-    if (!status?.enabled) return;
-    const interval = setInterval(fetchStatus, 30_000);
-    return () => clearInterval(interval);
-  }, [status?.enabled]);
-
-  const handleToggle = async () => {
-    if (!status) return;
-    setToggling(true);
-    setTunnelChanged(false);
-    try {
-      if (status.enabled) {
-        await api.post(API.REMOTE.DISABLE);
-        setShowQr(false); setQrBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; }); setFullToken(null);
-        prevTunnelUrl.current = null;
-      } else {
-        const result = await api.post<{ token: string; tunnel_url: string | null }>(API.REMOTE.ENABLE);
-        setFullToken(result.token);
-        await fetchStatus();
-        await fetchQrBlob();
-        setShowQr(true);
-        return;
-      }
-      await fetchStatus();
-    } catch (err) {
-      console.error("Failed to toggle remote access:", err);
-    } finally {
-      setToggling(false);
-    }
-  };
-
-  const handleShowQr = async () => {
-    if (showQr) { setShowQr(false); return; }
-    await fetchQrBlob();
-    setShowQr(true);
-    setTunnelChanged(false);
-  };
-
-  const handleRotateToken = async () => {
-    try {
-      const result = await api.post<{ token: string }>(API.REMOTE.ROTATE_TOKEN);
-      setFullToken(result.token);
-      await fetchStatus();
-      if (showQr) handleShowQr();
-    } catch {}
-  };
-
-  const handleCopyUrl = () => {
-    if (status?.tunnel_url) {
-      const token = fullToken || status.token_preview;
-      const url = token
-        ? `${status.tunnel_url}/m?token=${encodeURIComponent(token)}`
-        : `${status.tunnel_url}/m`;
-      navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handlePermModeChange = async (mode: string) => {
-    setPermMode(mode);
-    try { await api.patch(API.REMOTE.CONFIG, { permission_mode: mode }); } catch {}
-  };
-
-  if (loading) {
-    return <div className="h-16 rounded-lg bg-[var(--surface-tertiary)] animate-pulse" />;
-  }
-
-  return (
-    <div className="space-y-6">
-      <p className="text-xs text-[var(--text-secondary)]">{t("remoteDesc")}</p>
-
-      {/* Tunnel URL changed warning */}
-      {tunnelChanged && status?.enabled && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 animate-slide-up">
-          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-[var(--text-primary)]">{t("tunnelUrlChanged")}</p>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              {t("tunnelUrlChangedDesc")}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={handleShowQr}>
-            <QrCode className="h-3 w-3 mr-1" />
-            {t("tunnelShowQr")}
-          </Button>
-        </div>
-      )}
-
-      {/* Enable/Disable toggle */}
-      <div className="flex items-center justify-between rounded-lg border border-[var(--border-default)] p-3">
-        <div className="flex items-center gap-3">
-          {toggling ? <Loader2 className="h-4 w-4 animate-spin text-[var(--text-secondary)]" /> : status?.enabled ? <Wifi className="h-4 w-4 text-green-500" /> : <WifiOff className="h-4 w-4 text-[var(--text-tertiary)]" />}
-          <div>
-            <p className="text-sm font-medium text-[var(--text-primary)]">{toggling ? t("remoteStarting") : status?.enabled ? t("remoteActive") : t("remoteDisabled")}</p>
-            {status?.enabled && status.tunnel_url && <p className="text-xs text-[var(--text-secondary)] truncate max-w-[280px]">{status.tunnel_url}</p>}
-          </div>
-        </div>
-        <Switch checked={status?.enabled ?? false} onCheckedChange={handleToggle} disabled={toggling} />
-      </div>
-
-      {/* When enabled: show controls */}
-      {status?.enabled && (
-        <div className="space-y-3">
-          {status.tunnel_url && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 px-3 py-2 rounded-lg bg-[var(--surface-tertiary)] text-xs font-mono text-[var(--text-secondary)] truncate">
-                {status.tunnel_url}/m{fullToken ? `?token=${fullToken.slice(0, 12)}...` : ""}
-              </div>
-              <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={handleCopyUrl}>
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                <span className="ml-1 text-xs">{copied ? t("remoteCopied") : t("remoteCopy")}</span>
-              </Button>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="h-8" onClick={handleShowQr}>
-              <QrCode className="h-3 w-3" /><span className="ml-1 text-xs">{showQr ? t("remoteHideQr") : t("remoteShowQr")}</span>
-            </Button>
-            <Button variant="outline" size="sm" className="h-8" onClick={handleRotateToken}>
-              <RefreshCw className="h-3 w-3" /><span className="ml-1 text-xs">{t("remoteRotateToken")}</span>
-            </Button>
-          </div>
-
-          {showQr && qrBlobUrl && (
-            <div className="flex justify-center p-4 rounded-lg bg-white">
-              <img src={qrBlobUrl} alt={t("remoteQrAlt")} className="w-48 h-48" style={{ imageRendering: "pixelated" }} />
-            </div>
-          )}
-
-          {!fullToken && status.token_preview && <p className="text-xs text-[var(--text-tertiary)]">{t("remoteTokenPreview", { preview: status.token_preview })}</p>}
-
-          <div className="flex items-center gap-3 rounded-lg border border-[var(--border-default)] p-3">
-            <Shield className="h-4 w-4 text-[var(--text-secondary)] shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-[var(--text-primary)]">{t("remotePermission")}</p>
-              <p className="text-xs text-[var(--text-secondary)]">{t("remotePermissionDesc")}</p>
-            </div>
-            <select value={permMode} onChange={(e) => handlePermModeChange(e.target.value)} className="px-2 py-1 rounded-md bg-[var(--surface-tertiary)] text-xs border border-[var(--border-default)] text-[var(--text-primary)]">
-              <option value="auto">{t("remotePermAuto")}</option>
-              <option value="ask">{t("remotePermAsk")}</option>
-              <option value="deny">{t("remotePermDeny")}</option>
-            </select>
-          </div>
-
-          {status.active_tasks > 0 && <p className="text-xs text-[var(--text-secondary)]">{t("remoteActiveTasks", { n: status.active_tasks })}</p>}
-        </div>
-      )}
-
-      {!status?.enabled && (
-        <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] text-xs text-[var(--text-secondary)] space-y-1.5">
-          <p>{t("remoteInstructions")}</p>
-          <ol className="list-decimal list-inside space-y-0.5">
-            <li>{t("remoteStep1")}</li>
-            <li>{t("remoteStep2")}</li>
-            <li>{t("remoteStep3")}</li>
-          </ol>
-        </div>
-      )}
-
-      {/* Divider */}
-      <div className="border-t border-[var(--border-default)]" />
-
-      {/* OpenClaw Channels */}
-      <OpenClawSection />
-    </div>
-  );
+  return <OpenClawSection />;
 }
 
 
@@ -274,29 +50,6 @@ const PLATFORMS: PlatformDef[] = [
       { key: "bot_token", label: "Bot Token", placeholder: "xoxb-...", secret: true },
       { key: "app_token", label: "App Token", placeholder: "xapp-...", secret: true },
     ] },
-  { id: "feishu", name: "Feishu", icon: <FeishuIcon size={18} />, color: "text-[#3370FF]", auth: "token",
-    help: "Create an app at Feishu Open Platform",
-    helpUrl: "https://open.feishu.cn/app",
-    fields: [
-      { key: "app_id", label: "App ID", placeholder: "cli_xxxxx", secret: false },
-      { key: "app_secret", label: "App Secret", placeholder: "Enter app secret", secret: true },
-    ] },
-  { id: "signal", name: "Signal", icon: <SignalIcon size={18} />, color: "text-[#3A76F0]", auth: "token",
-    help: "Requires signal-cli installed",
-    fields: [
-      { key: "signal_number", label: "Phone Number", placeholder: "+1234567890", secret: false },
-    ] },
-  { id: "line", name: "LINE", icon: <LineIcon size={18} />, color: "text-[#06C755]", auth: "token",
-    help: "Get credentials from LINE Developers Console",
-    helpUrl: "https://developers.line.biz/console/",
-    fields: [
-      { key: "token", label: "Channel Access Token", placeholder: "Paste LINE channel access token", secret: true },
-    ] },
-  { id: "imessage", name: "iMessage", icon: <IMessageIcon size={18} />, color: "text-[#34C759]", auth: "token",
-    help: "macOS only \u2014 reads your local iMessage database",
-    fields: [
-      { key: "db_path", label: "Database Path (optional)", placeholder: "~/Library/Messages/chat.db", secret: false },
-    ] },
 ];
 
 function OpenClawSection() {
@@ -306,6 +59,42 @@ function OpenClawSection() {
   const startClaw = useOpenClawStart();
   const stopClaw = useOpenClawStop();
   const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null);
+  const [gatewayRestarting, setGatewayRestarting] = useState(false);
+
+  const restartGateway = useCallback(async () => {
+    setGatewayRestarting(true);
+    try {
+      const res = await api.post<{
+        status: string;
+        output?: string;
+        error?: string | null;
+      }>(resolveCoworkApiUrl(API.GATEWAY.RESTART));
+      if (res.status === "restarted") {
+        toast.success(t("gatewayRestarted"));
+        refetchClaw();
+      } else {
+        const msg = [res.error, res.output].filter(Boolean).join("\n") || t("gatewayRestartFailed");
+        toast.error(msg.length > 280 ? `${msg.slice(0, 280)}…` : msg);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const body = e.body;
+        let msg = e.message;
+        if (body && typeof body === "object" && "detail" in body) {
+          const d = (body as { detail: unknown }).detail;
+          if (typeof d === "string") msg = d;
+          else if (d && typeof d === "object" && "error" in d) {
+            msg = String((d as { error: unknown }).error);
+          }
+        }
+        toast.error(msg.length > 280 ? `${msg.slice(0, 280)}…` : msg);
+      } else {
+        toast.error(t("gatewayRestartFailed"));
+      }
+    } finally {
+      setGatewayRestarting(false);
+    }
+  }, [t, refetchClaw]);
 
   const installed = clawStatus?.installed ?? false;
   const running = clawStatus?.running ?? false;
@@ -337,10 +126,16 @@ function OpenClawSection() {
               </Button>
             )}
             {running && (
-              <Button variant="outline" size="sm" className="h-7 text-[11px]"
-                onClick={() => stopClaw.mutate()} disabled={stopClaw.isPending}>
-                {stopClaw.isPending ? <><Loader2 className="h-3 w-3 animate-spin" />{t("gatewayStopping")}</> : <><Square className="h-3 w-3" />{t("gatewayStop")}</>}
-              </Button>
+              <>
+                <Button variant="outline" size="sm" className="h-7 text-[11px]"
+                  onClick={restartGateway} disabled={gatewayRestarting}>
+                  {gatewayRestarting ? <><RefreshCw className="h-3 w-3 animate-spin" />{t("gatewayRestarting")}</> : <><RefreshCw className="h-3 w-3" />{t("restartGateway")}</>}
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 text-[11px]"
+                  onClick={() => stopClaw.mutate()} disabled={stopClaw.isPending}>
+                  {stopClaw.isPending ? <><Loader2 className="h-3 w-3 animate-spin" />{t("gatewayStopping")}</> : <><Square className="h-3 w-3" />{t("gatewayStop")}</>}
+                </Button>
+              </>
             )}
           </div>
         </div>

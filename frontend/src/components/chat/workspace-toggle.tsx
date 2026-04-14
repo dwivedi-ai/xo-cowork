@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, X } from "lucide-react";
+import { FolderOpen, ChevronDown, Monitor } from "lucide-react";
 import { Loader2 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useSettingsStore } from "@/stores/settings-store";
-import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { API, queryKeys } from "@/lib/constants";
-import { browseDirectory } from "@/lib/upload";
-import { isRemoteMode } from "@/lib/remote-connection";
-import { MobileDirectoryBrowser } from "@/components/mobile/directory-browser";
 import { cn } from "@/lib/utils";
 
 interface WorkspaceToggleProps {
@@ -25,8 +26,27 @@ interface WorkspaceToggleProps {
   isIndexing?: boolean;
 }
 
+interface DirEntry {
+  name: string;
+  path: string;
+}
+
+interface ListDirectoryResponse {
+  path: string;
+  parent: string | null;
+  dirs: DirEntry[];
+  files: DirEntry[];
+}
+
+const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+const SYSTEM_DIRS = new Set(["memory", "state", "projects"]);
+
+function isUserProject(entry: DirEntry): boolean {
+  return !entry.name.startsWith(".") && !SYSTEM_DIRS.has(entry.name);
+}
+
 function getDisplayName(path: string | null | undefined): string | null {
-  if (!path || path === ".") return null;
+  if (!path || path === "." || path === WORKSPACE_ROOT) return null;
   const normalized = path.replace(/\\/g, "/").replace(/\/$/, "");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || null;
@@ -35,9 +55,8 @@ function getDisplayName(path: string | null | undefined): string | null {
 export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceToggleProps) {
   const { t } = useTranslation("chat");
   const queryClient = useQueryClient();
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [browsingDirs, setBrowsingDirs] = useState(false);
-  const remote = isRemoteMode();
+  const [projects, setProjects] = useState<DirEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   // For new chats (no sessionId), use global settings store
   const globalWorkspace = useSettingsStore((s) => s.workspaceDirectory);
@@ -47,51 +66,48 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
   const currentPath = sessionId ? directory : globalWorkspace;
   const displayName = getDisplayName(currentPath);
 
-  // Handle directory selection from either native picker (desktop) or mobile browser
-  const applySelectedPath = useCallback(async (path: string) => {
-    if (sessionId) {
-      await api.patch(API.SESSIONS.DETAIL(sessionId), { directory: path });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
-    } else {
-      setGlobalWorkspace(path);
-    }
-    setPopoverOpen(false);
-  }, [sessionId, queryClient, setGlobalWorkspace]);
-
-  const handleBrowse = useCallback(async () => {
-    if (remote) {
-      // Remote mode: use directory browser instead of native OS dialog
-      setBrowsingDirs(true);
-      setPopoverOpen(false);
-      return;
-    }
+  // Load user projects from workspace
+  const loadProjects = useCallback(async () => {
     try {
-      const path = await browseDirectory(t("workspaceSet"));
-      if (path) {
-        await applySelectedPath(path);
-      }
-    } catch (err) {
-      console.error("Failed to browse directory:", err);
-      toast.error("Failed to open folder picker");
+      const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
+        path: WORKSPACE_ROOT,
+      });
+      setProjects(res.dirs.filter(isUserProject));
+    } catch {
+      setProjects([]);
+    } finally {
+      setLoaded(true);
     }
-  }, [remote, t, applySelectedPath]);
+  }, []);
 
-  const handleClear = useCallback(async () => {
-    if (sessionId) {
-      await api.patch(API.SESSIONS.DETAIL(sessionId), { directory: "." });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
-    } else {
-      setGlobalWorkspace(null);
-    }
-    setPopoverOpen(false);
-  }, [sessionId, queryClient, setGlobalWorkspace]);
+  // Fetch projects on first open
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (open && !loaded) {
+        void loadProjects();
+      }
+    },
+    [loaded, loadProjects],
+  );
+
+  // Apply selection
+  const selectPath = useCallback(
+    async (path: string | null) => {
+      const value = path ?? ".";
+      if (sessionId) {
+        await api.patch(API.SESSIONS.DETAIL(sessionId), { directory: value });
+        queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
+      } else {
+        setGlobalWorkspace(path);
+      }
+    },
+    [sessionId, queryClient, setGlobalWorkspace],
+  );
 
   return (
-    <>
-    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-      <PopoverTrigger asChild>
+    <DropdownMenu onOpenChange={handleOpenChange}>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
           className={cn(
@@ -107,40 +123,53 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
             <FolderOpen className="h-4 w-4 shrink-0" />
           )}
           <span className="truncate">{displayName || t("workspaceNone")}</span>
-          {isIndexing && displayName && (
-            <span className="text-[11px] text-[var(--text-tertiary)] shrink-0">Indexing…</span>
-          )}
+          <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-tertiary)]" />
         </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80">
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-[var(--text-primary)]">{t("workspace")}</p>
-          <div className="rounded-lg bg-[var(--surface-secondary)] px-3 py-2 text-[13px] text-[var(--text-secondary)] break-all">
-            {currentPath && currentPath !== "." ? currentPath : t("workspaceNone")}
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" className="flex-1" onClick={handleBrowse}>
-              <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
-              {t("workspaceBrowse")}
-            </Button>
-            {displayName && (
-              <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
-                <X className="h-3.5 w-3.5 mr-1.5" />
-                {t("workspaceClear")}
-              </Button>
-            )}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-    {remote && (
-      <MobileDirectoryBrowser
-        open={browsingDirs}
-        onClose={() => setBrowsingDirs(false)}
-        onSelect={(path) => void applySelectedPath(path)}
-        initialPath={currentPath}
-      />
-    )}
-    </>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52">
+        {/* "All" / Entire computer option */}
+        <DropdownMenuItem
+          className={cn(
+            "flex items-center gap-2 text-[13px]",
+            !displayName && "text-[var(--brand-primary)] font-medium",
+          )}
+          onClick={() => void selectPath(null)}
+        >
+          <Monitor className="h-3.5 w-3.5 shrink-0" />
+          {t("workspaceNone")}
+        </DropdownMenuItem>
+
+        {/* Project list */}
+        {projects.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            {projects.map((p) => {
+              const isActive = currentPath === p.path;
+              return (
+                <DropdownMenuItem
+                  key={p.path}
+                  className={cn(
+                    "flex items-center gap-2 text-[13px]",
+                    isActive && "text-[var(--brand-primary)] font-medium",
+                  )}
+                  onClick={() => void selectPath(p.path)}
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate capitalize">{p.name}</span>
+                </DropdownMenuItem>
+              );
+            })}
+          </>
+        )}
+
+        {/* Loading state */}
+        {!loaded && (
+          <DropdownMenuItem disabled className="flex items-center gap-2 text-[13px]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading...
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

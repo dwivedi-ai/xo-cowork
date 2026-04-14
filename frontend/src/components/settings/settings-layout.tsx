@@ -3,32 +3,22 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, BarChart3, Brain, KeyRound } from "lucide-react";
+import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GeneralTab } from "@/components/settings/general-tab";
-import { UsageSkeleton } from "@/components/settings/usage-tab";
-import { MemoryTab } from "@/components/settings/memory-tab";
 import { SecretsTab } from "@/components/settings/secrets-tab";
 import { AutomationsTabContent } from "@/app/(main)/automations/content";
 import { PluginsTabContent } from "@/app/(main)/plugins/content";
 import { RemoteTabContent } from "@/app/(main)/remote/content";
-
-const UsageTab = dynamic(
-  () => import("@/components/settings/usage-tab").then((mod) => ({ default: mod.UsageTab })),
-  { ssr: false, loading: () => <UsageSkeleton /> },
-);
 
 const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
   { id: "providers", icon: Cpu, labelKey: "tabProviders" },
   { id: "automations", icon: Timer, labelKey: "tabAutomations" },
   { id: "plugins", icon: Plug, labelKey: "tabPlugins" },
-  { id: "remote", icon: Wifi, labelKey: "tabRemote" },
-  { id: "usage", icon: BarChart3, labelKey: "tabUsage" },
-  { id: "memory", icon: Brain, labelKey: "tabMemory" },
+  { id: "remote", icon: Wifi, labelKey: "tabChannels" },
   { id: "secrets", icon: KeyRound, labelKey: "tabSecrets" },
 ] as const;
 
@@ -117,8 +107,6 @@ export default function SettingsPageClient() {
             {activeTab === "automations" && <AutomationsTabContent />}
             {activeTab === "plugins" && <PluginsTabContent />}
             {activeTab === "remote" && <RemoteTabContent />}
-            {activeTab === "usage" && <UsageTab />}
-            {activeTab === "memory" && <MemoryTab />}
             {activeTab === "secrets" && <SecretsTab />}
           </div>
         </div>

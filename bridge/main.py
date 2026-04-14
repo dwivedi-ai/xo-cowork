@@ -14,9 +14,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import hashlib
+import mimetypes
+
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -1391,6 +1394,47 @@ def workspace_memory_refresh(workspace_path: str = ""):
 @app.post("/api/workspace-memory/export")
 def workspace_memory_export(workspace_path: str = ""):
     return {"ok": True}
+
+
+@app.post("/api/files/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    workspace: str = Form(""),
+):
+    """Save an uploaded file into the workspace (or ~/uploads fallback)."""
+    content = await file.read()
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    if workspace:
+        dest_dir = Path(workspace).resolve()
+    else:
+        dest_dir = Path.home() / "uploads"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = file.filename or "upload"
+    dest = dest_dir / filename
+
+    # Avoid overwriting — append hash suffix if name collides with different content
+    if dest.exists():
+        existing_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+        if existing_hash != content_hash:
+            stem = dest.stem
+            suffix = dest.suffix
+            dest = dest_dir / f"{stem}_{content_hash[:8]}{suffix}"
+
+    dest.write_bytes(content)
+
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    return {
+        "file_id": content_hash[:16],
+        "name": dest.name,
+        "path": str(dest),
+        "size": len(content),
+        "mime_type": mime,
+        "source": "uploaded",
+        "content_hash": content_hash,
+    }
 
 
 @app.post("/api/files/list-directory")

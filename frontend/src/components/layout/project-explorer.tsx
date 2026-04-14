@@ -153,6 +153,14 @@ function FileNode({ name, path, depth }: FileNodeProps) {
 
 const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
 
+/** System/internal directories that should not appear as user projects. */
+const SYSTEM_DIRS = new Set(["memory", "state", "projects"]);
+
+/** Returns true for directories the user explicitly created (not hidden or system). */
+function isUserProject(entry: DirEntry): boolean {
+  return !entry.name.startsWith(".") && !SYSTEM_DIRS.has(entry.name);
+}
+
 export function ProjectExplorer() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [rootData, setRootData] = useState<{ dirs: DirEntry[]; files: DirEntry[] } | null>(null);
@@ -168,7 +176,7 @@ export function ProjectExplorer() {
       const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
         path: WORKSPACE_ROOT,
       });
-      setRootData({ dirs: res.dirs, files: res.files });
+      setRootData({ dirs: res.dirs.filter(isUserProject), files: res.files });
     } catch {
       setRootData({ dirs: [], files: [] });
     } finally {
@@ -237,7 +245,7 @@ export function ProjectExplorer() {
         ) : (
           <FolderOpen className="h-[18px] w-[18px] shrink-0" />
         )}
-        <span className="flex-1 text-left">Project</span>
+        <span className="flex-1 text-left">Projects</span>
         {isExpanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />
         ) : (
@@ -255,7 +263,7 @@ export function ProjectExplorer() {
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-active)] transition-colors"
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              New folder
+              New project
             </button>
           </div>
 
@@ -271,7 +279,7 @@ export function ProjectExplorer() {
                   if (e.key === "Enter") void confirmNewFolder();
                   if (e.key === "Escape") cancelNewFolder();
                 }}
-                placeholder="Folder name"
+                placeholder="Project name"
                 className={cn(
                   "flex-1 min-w-0 bg-[var(--surface-secondary)] text-[13px] text-[var(--text-primary)]",
                   "border border-[var(--border-focus)] rounded-md px-2 py-0.5 outline-none",
@@ -300,15 +308,12 @@ export function ProjectExplorer() {
             </div>
           )}
 
-          {rootData.dirs.length === 0 && rootData.files.length === 0 && !addingFolder ? (
-            <p className="px-3 py-2 text-[11px] text-[var(--text-tertiary)]">Empty directory</p>
+          {rootData.dirs.length === 0 && !addingFolder ? (
+            <p className="px-3 py-2 text-[11px] text-[var(--text-tertiary)]">No projects yet</p>
           ) : (
             <>
               {rootData.dirs.map((d) => (
                 <FolderNode key={d.path} name={d.name} path={d.path} depth={0} />
-              ))}
-              {rootData.files.map((f) => (
-                <FileNode key={f.path} name={f.name} path={f.path} depth={0} />
               ))}
             </>
           )}
