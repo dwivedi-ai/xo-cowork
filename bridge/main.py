@@ -322,7 +322,7 @@ def load_all_sessions() -> list[dict]:
                 "parent_id": None,
                 "slug": None,
                 "agent": agent_name,
-                "directory": str(OPENCLAW_DIR / "workspace"),
+                "directory": meta.get("directory") or str(OPENCLAW_DIR / "workspace"),
                 "title": title,
                 "version": 1,
                 "summary_additions": 0,
@@ -370,6 +370,45 @@ def find_session_key(session_id: str) -> str | None:
             if meta.get("sessionId") == session_id:
                 return key
     return None
+
+
+def update_session_directory(session_id: str, directory: str) -> bool:
+    """Persist selected workspace directory on the matching sessions.json entry."""
+    if not AGENTS_DIR.exists():
+        return False
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    for agent_dir in AGENTS_DIR.iterdir():
+        if not agent_dir.is_dir():
+            continue
+        index_path = agent_dir / "sessions" / "sessions.json"
+        if not index_path.exists():
+            continue
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                index_data = json.load(f)
+        except Exception:
+            continue
+
+        changed = False
+        for meta in index_data.values():
+            if not isinstance(meta, dict) or meta.get("sessionId") != session_id:
+                continue
+            history = meta.get("directoryHistory")
+            if not isinstance(history, list):
+                history = []
+            history.append({"directory": directory, "selectedAt": now_ms})
+            meta["directoryHistory"] = history[-200:]
+            meta["directory"] = directory
+            meta["updatedAt"] = now_ms
+            changed = True
+            break
+
+        if changed:
+            index_path.write_text(json.dumps(index_data, ensure_ascii=False, indent=2), encoding="utf-8")
+            return True
+
+    return False
 
 
 def convert_messages(session_id: str, records: list[dict]) -> list[dict]:
@@ -1387,8 +1426,25 @@ async def create_session(request: Request):
 
 
 @app.patch("/api/sessions/{session_id}")
-def update_session(session_id: str):
-    return {"ok": True}
+async def update_session(session_id: str, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    directory = body.get("directory")
+    if directory is None:
+        return {"ok": True}
+
+    directory = str(directory).strip()
+    if not directory:
+        return JSONResponse(status_code=400, content={"detail": "directory must be a non-empty string"})
+
+    updated = update_session_directory(session_id, directory)
+    if not updated:
+        return JSONResponse(status_code=404, content={"detail": "Session not found"})
+
+    return {"ok": True, "session_id": session_id, "directory": directory}
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -1794,127 +1850,126 @@ def _serialize_env_file(entries: list[dict]) -> str:
 
 _PROJECT_SCAFFOLD: dict[str, str] = {
     "WORKSPACE.md": """\
-# WORKSPACE.md - Project Overview
+# WORKSPACE.md
 
-This file is the source of truth for what this project is and where it stands.
-The AI reads it at the start of every session to get up to speed quickly.
-Keep it short and accurate — update it as the project evolves.
+## Workspace Summary
+- **Name:** <project-name>
+- **Owner:** <owner-or-team>
+- **Last updated:** <YYYY-MM-DD>
+- **Primary repository/folder:** <absolute-or-repo-relative-path>
 
-## Purpose
+## Mission
+<!-- 1-3 lines on why this workspace exists and what success looks like. -->
 
-<!-- What does this project do? What problem does it solve?
-     One or two sentences is enough. -->
+## Product/Project Context
+<!-- Problem statement, users, constraints, and non-goals. -->
 
-## Stack & Structure
+## Architecture Snapshot
+- **Frontend:** <framework/runtime>
+- **Backend:** <framework/runtime>
+- **Data layer:** <db/cache/queue>
+- **Integrations:** <external APIs/services>
 
-<!-- Key technologies, frameworks, or tools in use.
-     Example:
-     - Language: Python 3.12
-     - Framework: FastAPI
-     - Database: PostgreSQL
-     - Frontend: Next.js (App Router) -->
+## Working Boundaries
+- In-scope:
+  - <what can be changed>
+- Out-of-scope:
+  - <what should not be changed without approval>
 
-## Status
+## Sources of Truth
+- Requirements: <path or link>
+- Design docs: <path or link>
+- API contracts: <path or link>
+- Runbooks: <path or link>
 
-<!-- Current state of the project. What's working, what's in progress?
-     Example:
-     - Auth: done
-     - API: in progress
-     - UI: not started -->
+## Current Focus
+- Sprint/iteration theme: <theme>
+- Active objective IDs: <OBJ-1, OBJ-2>
+- Risks/blockers:
+  - <risk 1>
+  - <risk 2>
 
-## Important Paths
-
-<!-- Key files or directories the AI should know about.
-     Example:
-     - Entry point: src/main.py
-     - Config: .env
-     - Docs: docs/ -->
+## Handover Notes
+<!-- Short operational notes future agents should know before they start. -->
 
 ---
 """,
     "AGENTS.md": """\
-# AGENTS.md - Agent Instructions
+# AGENTS.md
 
-This file tells the AI how to behave inside this project.
-Think of it as a standing brief — rules, preferences, and context that apply
-to every conversation in this workspace.
+## Agent Operating Contract
+All agents working in this workspace must:
+1. Read `WORKSPACE.md` and `OBJECTIVES.md` before making edits.
+2. Align every task to at least one objective ID from `OBJECTIVES.md`.
+3. Keep changes inside agreed workspace boundaries.
+4. Document findings, decisions, and progress in the logs below.
 
-## Behaviour Rules
+## Execution Rules
+- Prefer small, reversible changes.
+- Do not use destructive commands without explicit approval.
+- Validate critical changes with available tests/checks.
+- Surface assumptions and blockers early.
+- Keep documentation in sync with behavior changes.
 
-<!-- How should the AI operate here? What should it always or never do?
-     Example:
-     - Always run tests before marking a task done
-     - Never delete files without confirming first
-     - Prefer editing existing files over creating new ones
-     - Use British English in all output -->
+## Required Logs
+### Objective Progress Log
+| Date | Agent | Objective ID | Progress | Evidence/PR/Commit | Next Step |
+| --- | --- | --- | --- | --- | --- |
+| <YYYY-MM-DD> | <agent-name> | <OBJ-1> | <what moved> | <link-or-path> | <next action> |
 
-## Code Style
+### Findings Log
+| Date | Agent | Area | Finding | Impact | Recommendation |
+| --- | --- | --- | --- | --- | --- |
+| <YYYY-MM-DD> | <agent-name> | <component> | <observation> | <high/med/low> | <proposal> |
 
-<!-- Project-specific conventions the AI must follow.
-     Example:
-     - 2-space indentation, no semicolons (JS/TS)
-     - Type hints required on all functions (Python)
-     - Commit messages: conventional commits format -->
+### Decision Log
+| Date | Decision | Rationale | Owner | Review Date |
+| --- | --- | --- | --- | --- |
+| <YYYY-MM-DD> | <decision summary> | <why> | <owner> | <date> |
 
-## Context the AI Should Know
-
-<!-- Background the AI needs but that won't be obvious from the code.
-     Example:
-     - This project is a rewrite of a legacy PHP app
-     - The client is non-technical — keep explanations simple
-     - Rate limits on the external API: 100 req/min -->
-
-## Off-Limits
-
-<!-- Anything the AI must not touch or change without explicit instruction.
-     Example:
-     - Do not modify database migrations
-     - Do not change the public API contract -->
+## Reporting Format (end of task)
+- Objective alignment: `<OBJ-ids>`
+- What changed: `<files and behavior>`
+- Validation: `<tests/checks run>`
+- Risks/unknowns: `<open items>`
+- Follow-up: `<next suggested step>`
 
 ---
 """,
     "OBJECTIVES.md": """\
-# OBJECTIVES.md - Goals & Tasks
+# OBJECTIVES.md
 
-This file tracks what needs to get done.
-Update it regularly — move tasks between sections as work progresses.
-The AI will use this to understand priorities and pick up where you left off.
+## Objective Framework (OKR)
+Use this format for all planning. Every active task should map to one KR.
 
-## Goals
+## Objective Table
+| Objective ID | Objective (Outcome) | Owner | Horizon | Status | Confidence |
+| --- | --- | --- | --- | --- | --- |
+| OBJ-1 | <clear outcome statement> | <owner> | <Qx YYYY> | <on-track/at-risk/off-track> | <high/med/low> |
 
-<!-- The high-level outcomes you want to achieve.
-     These should be stable and rarely change.
-     Example:
-     - Launch a working MVP by end of month
-     - Reduce API response time to under 200ms
-     - Pass all existing tests with zero regressions -->
+## Key Results Table
+| KR ID | Objective ID | Key Result (Measurable) | Baseline | Target | Current | Due Date | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| KR-1.1 | OBJ-1 | <metric target> | <value> | <value> | <value> | <YYYY-MM-DD> | <on-track/at-risk/off-track> |
 
-## Current Tasks
+## Weekly Execution Plan
+| Week | KR ID | Planned Actions | Owner | Evidence |
+| --- | --- | --- | --- | --- |
+| <YYYY-Www> | KR-1.1 | <planned work> | <owner> | <ticket/PR/doc path> |
 
-<!-- What you're actively working on right now.
-     Be specific so the AI can take action.
-     Example:
-     - [ ] Add input validation to the /register endpoint
-     - [ ] Write unit tests for the auth module
-     - [ ] Fix the 500 error on empty search results -->
+## Result Log
+| Date | KR ID | Result Update | Delta | Evidence | Notes |
+| --- | --- | --- | --- | --- | --- |
+| <YYYY-MM-DD> | KR-1.1 | <what changed> | <+/- value> | <link-or-path> | <context> |
 
-## Backlog
-
-<!-- Things to do later, in rough priority order.
-     Example:
-     - [ ] Add rate limiting to the public API
-     - [ ] Set up CI/CD pipeline
-     - [ ] Write onboarding docs -->
-
-## Done
-
-<!-- Completed items — keep a record so the AI understands what changed.
-     Example:
-     - [x] Set up project structure
-     - [x] Implement JWT authentication -->
+## Agent Alignment Notes
+- Agents must cite objective and KR IDs when proposing or executing work.
+- If work does not map to an objective, classify it as maintenance and justify it.
+- Escalate any KR with off-track status in the next progress update.
 
 ---
 """,
+    "sessions.json": "[]\n",
 }
 
 
@@ -1922,12 +1977,19 @@ The AI will use this to understand priorities and pick up where you left off.
 async def make_directory(request: Request):
     """Create a new directory under the user's home directory.
 
-    Pass ``scaffold: true`` to also create WORKSPACE.md, AGENTS.md, and
-    OBJECTIVES.md inside the new directory.
+    Body fields:
+    - ``path`` (str, required): absolute path of the directory to create.
+    - ``scaffold`` (bool, optional): when true, writes WORKSPACE.md, AGENTS.md,
+      OBJECTIVES.md, and sessions.json inside the new directory.
+    - ``files`` (list[str], optional): additional local file paths to copy into
+      the new directory. Each entry must be an absolute path that already exists
+      under the user's home directory. The file is copied using its original
+      filename; existing scaffold files with the same name are not overwritten.
     """
     body = await request.json()
     raw_path = body.get("path")
     scaffold = bool(body.get("scaffold", False))
+    extra_files: list[str] = body.get("files") or []
 
     if not raw_path:
         return JSONResponse(status_code=400, content={"detail": "Missing path"})
@@ -1941,15 +2003,39 @@ async def make_directory(request: Request):
     if target.exists():
         return JSONResponse(status_code=409, content={"detail": "Already exists"})
 
+    # Validate extra file paths before creating anything
+    resolved_extras: list[Path] = []
+    for raw_file in extra_files:
+        fp = Path(raw_file).resolve()
+        if not str(fp).startswith(str(base)):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Access denied: {raw_file}"},
+            )
+        if not fp.is_file():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"File not found: {raw_file}"},
+            )
+        resolved_extras.append(fp)
+
     try:
         target.mkdir(parents=True, exist_ok=False)
+
         if scaffold:
             for filename, content in _PROJECT_SCAFFOLD.items():
                 (target / filename).write_text(content)
+
+        copied = []
+        for src in resolved_extras:
+            dest = target / src.name
+            if not dest.exists():
+                shutil.copy2(src, dest)
+            copied.append(src.name)
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
 
-    return {"path": str(target), "name": target.name}
+    return {"path": str(target), "name": target.name, "copied": copied}
 
 
 @app.get("/api/secrets/env")

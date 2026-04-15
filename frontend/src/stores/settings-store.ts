@@ -29,6 +29,8 @@ export type WorkMode = "plan" | "ask" | "auto";
 interface SettingsStore {
   /** Whether the user has completed the first-run onboarding flow */
   hasCompletedOnboarding: boolean;
+  /** Company / workspace name set during onboarding */
+  companyName: string;
   /** Selected model ID (e.g. "claude-sonnet-4-20250514") */
   selectedModel: string | null;
   /** Selected provider ID for the model (e.g. "anthropic") — determines which API key is used */
@@ -77,6 +79,8 @@ interface SettingsStore {
   setWorkspaceDirectory: (dir: string | null) => void;
   /** Mark onboarding as complete */
   completeOnboarding: () => void;
+  /** Set company name */
+  setCompanyName: (name: string) => void;
   /** Mark feature hints as seen */
   setHasSeenHints: (seen: boolean) => void;
   /** Set UI language */
@@ -88,7 +92,8 @@ interface SettingsStore {
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
-      hasCompletedOnboarding: true,
+      hasCompletedOnboarding: false,
+      companyName: "",
       selectedModel: null,
       selectedProviderId: null,
       selectedAgent: "build",
@@ -169,6 +174,7 @@ export const useSettingsStore = create<SettingsStore>()(
       clearAllPermissionRules: () => set({ savedPermissions: [] }),
       setWorkspaceDirectory: (dir) => set({ workspaceDirectory: dir }),
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
+      setCompanyName: (name) => set({ companyName: name }),
       setHasSeenHints: (seen) => set({ hasSeenHints: seen }),
       setLanguage: (lang) => {
         set({ language: lang });
