@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,14 +17,16 @@ import {
   EyeOff,
   ExternalLink,
   Plus,
-  Sparkles,
+  Zap,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSettingsStore } from "@/stores/settings-store";
 import { api } from "@/lib/api";
-import { API, IS_DESKTOP, queryKeys } from "@/lib/constants";
+import { API, IS_DESKTOP, XO_COWORK_API_BASE, queryKeys } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
 import {
   WhatsAppIcon,
@@ -32,7 +34,9 @@ import {
   TelegramIcon,
   SlackIcon,
 } from "@/components/icons/platform-icons";
-import type { SessionResponse } from "@/types/session";
+import { toast } from "sonner";
+
+const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
 
 /* ------------------------------------------------------------------ */
 /* Slide animation                                                     */
@@ -193,13 +197,7 @@ function CompanyStep({
 /* ------------------------------------------------------------------ */
 
 type ModelProvider = "anthropic" | "openai" | "other";
-type OpenAIMode = "apikey" | "chatgpt";
-
-interface OpenAISubscriptionStatus {
-  is_connected: boolean;
-  email?: string;
-  needs_reauth?: boolean;
-}
+type OpenAIMode = "apikey" | "codex";
 
 function ApiKeyField({
   value,
@@ -245,7 +243,7 @@ function ProviderOption({
   selected: boolean;
   onSelect: () => void;
   label: string;
-  badge?: string;
+  badge?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
@@ -271,9 +269,13 @@ function ProviderOption({
         </div>
         <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{label}</span>
         {badge && (
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
-            {badge}
-          </span>
+          typeof badge === "string" ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
+              {badge}
+            </span>
+          ) : (
+            badge
+          )
         )}
       </button>
 
@@ -318,9 +320,130 @@ function ModelsStep({
   const [openaiSaving, setOpenaiSaving] = useState(false);
   const [openaiSaved, setOpenaiSaved] = useState(false);
   const [openaiError, setOpenaiError] = useState<string | null>(null);
-  const [chatgptConnected, setChatgptConnected] = useState(false);
-  const [chatgptConnecting, setChatgptConnecting] = useState(false);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Codex state
+  const { data: codexStatus } = useQuery({
+    queryKey: queryKeys.codexStatus,
+    queryFn: () =>
+      api.get<{
+        is_connected: boolean;
+        email: string;
+        accounts?: { id: string; email: string; expires?: number }[];
+      }>(API.CODEX.STATUS),
+    refetchInterval: 10_000,
+  });
+  const [codexConnecting, setCodexConnecting] = useState(false);
+  const [codexSessionId, setCodexSessionId] = useState<string | null>(null);
+  const [codexAuthUrl, setCodexAuthUrl] = useState<string | null>(null);
+  const [codexCallbackInput, setCodexCallbackInput] = useState("");
+  const [codexSubmitting, setCodexSubmitting] = useState(false);
+  const [codexError, setCodexError] = useState<string | null>(null);
+  const codexAbortRef = useRef<AbortController | null>(null);
+
+  const startCodexSetup = useCallback(async () => {
+    setCodexError(null);
+    setCodexConnecting(true);
+    setCodexSessionId(null);
+    setCodexAuthUrl(null);
+    setCodexCallbackInput("");
+
+    const ctrl = new AbortController();
+    codexAbortRef.current = ctrl;
+
+    try {
+      const url = `${XO_COWORK_API_BASE}${API.CODEX.SETUP}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+      });
+      if (!resp.ok || !resp.body) {
+        setCodexError("Codex sign-in failed. Please try again.");
+        setCodexConnecting(false);
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "session") {
+              setCodexSessionId(data.session_id);
+            } else if (data.type === "auth_url") {
+              setCodexAuthUrl(data.url);
+              if (IS_DESKTOP) desktopAPI.openExternal(data.url);
+              else window.open(data.url, "_blank", "noopener,noreferrer");
+            } else if (data.type === "done" && data.status === "completed") {
+              await qc.refetchQueries({ queryKey: queryKeys.codexStatus });
+              setCodexConnecting(false);
+              setCodexAuthUrl(null);
+              setCodexSessionId(null);
+              return;
+            } else if (data.type === "error") {
+              setCodexError(data.error || "Codex setup error");
+              setCodexConnecting(false);
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setCodexError(String(e));
+        setCodexConnecting(false);
+      }
+    }
+  }, [qc]);
+
+  const submitCodexCallback = useCallback(async () => {
+    if (!codexSessionId || !codexCallbackInput.trim()) return;
+    setCodexSubmitting(true);
+    setCodexError(null);
+    try {
+      const url = `${XO_COWORK_API_BASE}${API.CODEX.CALLBACK}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codexCallbackInput.trim(), session_id: codexSessionId }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        setCodexError(body.detail || "Codex callback failed");
+        setCodexSubmitting(false);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
+      setCodexConnecting(false);
+      setCodexAuthUrl(null);
+      setCodexSessionId(null);
+      setCodexCallbackInput("");
+    } catch (e) {
+      setCodexError(String(e));
+    } finally {
+      setCodexSubmitting(false);
+    }
+  }, [codexSessionId, codexCallbackInput, qc]);
+
+  const cancelCodexSetup = useCallback(() => {
+    codexAbortRef.current?.abort();
+    setCodexConnecting(false);
+    setCodexSessionId(null);
+    setCodexAuthUrl(null);
+    setCodexCallbackInput("");
+    setCodexError(null);
+  }, []);
+
+  const codexConnected = codexStatus?.is_connected ?? false;
 
   // Other (env var) state
   const [envKey, setEnvKey] = useState("");
@@ -328,8 +451,6 @@ function ModelsStep({
   const [envSaving, setEnvSaving] = useState(false);
   const [envSaved, setEnvSaved] = useState(false);
   const [envError, setEnvError] = useState<string | null>(null);
-
-  useEffect(() => () => { if (pollingRef.current) clearInterval(pollingRef.current); }, []);
 
   const saveAnthropicKey = async () => {
     if (!anthropicKey.trim()) return;
@@ -365,42 +486,7 @@ function ModelsStep({
     }
   };
 
-  const connectChatGPT = async () => {
-    setChatgptConnecting(true);
-    setOpenaiError(null);
-    try {
-      const resp = await api.post<{ auth_url: string }>(API.CONFIG.OPENAI_SUBSCRIPTION_LOGIN, {});
-      if (IS_DESKTOP) {
-        await desktopAPI.openExternal(resp.auth_url);
-      } else {
-        window.open(resp.auth_url, "_blank", "noopener,noreferrer");
-      }
-      // Poll for connection
-      pollingRef.current = setInterval(async () => {
-        try {
-          const status = await api.get<OpenAISubscriptionStatus>(API.CONFIG.OPENAI_SUBSCRIPTION);
-          if (status.is_connected) {
-            clearInterval(pollingRef.current!);
-            pollingRef.current = null;
-            setChatgptConnected(true);
-            setChatgptConnecting(false);
-            setActiveProvider("chatgpt");
-            qc.invalidateQueries({ queryKey: queryKeys.models });
-          }
-        } catch { /* keep polling */ }
-      }, 2000);
-      // Timeout after 5 min
-      setTimeout(() => {
-        if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
-        setChatgptConnecting(false);
-      }, 300_000);
-    } catch {
-      setOpenaiError("Could not start ChatGPT sign-in. Please try again.");
-      setChatgptConnecting(false);
-    }
-  };
-
-  const saveEnvVar = async () => {
+const saveEnvVar = async () => {
     if (!envKey.trim() || !envValue.trim()) return;
     setEnvSaving(true);
     setEnvError(null);
@@ -423,7 +509,7 @@ function ModelsStep({
 
   const canContinue =
     selected === "anthropic" ? anthropicSaved :
-    selected === "openai" ? (openaiSaved || chatgptConnected) :
+    selected === "openai" ? (openaiSaved || codexConnected) :
     selected === "other" ? envSaved :
     false;
 
@@ -481,7 +567,7 @@ function ModelsStep({
         >
           {/* Sub-mode toggle */}
           <div className="flex gap-1 p-1 rounded-lg bg-[var(--surface-primary)] mb-3">
-            {(["apikey", "chatgpt"] as OpenAIMode[]).map((mode) => (
+            {(["apikey", "codex"] as OpenAIMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setOpenaiMode(mode)}
@@ -491,7 +577,7 @@ function ModelsStep({
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                 }`}
               >
-                {mode === "apikey" ? "API Key" : "Connect with ChatGPT"}
+                {mode === "apikey" ? "API Key" : "Connect with Codex"}
               </button>
             ))}
           </div>
@@ -528,28 +614,123 @@ function ModelsStep({
             </>
           ) : (
             <>
-              <p className="text-xs text-[var(--text-tertiary)] mb-3">
-                Sign in with your ChatGPT Plus or Team account. A browser window will open.
-              </p>
-              {chatgptConnected ? (
-                <p className="text-xs text-[var(--color-success)] flex items-center gap-1">
-                  <Check className="h-3 w-3" /> ChatGPT connected
+              {/* Codex connection status */}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-[var(--text-tertiary)]">
+                  {codexConnected
+                    ? "Reconnect anytime to refresh or add another account."
+                    : "Sign in with your Codex account. A browser window will open."}
                 </p>
+                {codexConnected ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-success)]/10 text-[var(--color-success)] shrink-0">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />
+                    {(codexStatus?.accounts?.length ?? 0) > 1
+                      ? `${codexStatus?.accounts?.length} connected`
+                      : "Connected"}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--surface-primary)] text-[var(--text-tertiary)] shrink-0">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-tertiary)]" />
+                    Not connected
+                  </span>
+                )}
+              </div>
+
+              {codexConnected && (codexStatus?.accounts?.length ?? 0) > 0 && (
+                <div className="mb-3 rounded-md bg-[var(--surface-primary)] divide-y divide-[var(--border-default)]">
+                  <div className="px-2.5 py-1.5 flex items-center justify-between">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
+                      Connected accounts ({codexStatus?.accounts?.length})
+                    </span>
+                    <span className="text-[10px] font-medium text-[var(--color-success)]">Active</span>
+                  </div>
+                  {codexStatus?.accounts?.map((acct) => (
+                    <div
+                      key={acct.id}
+                      className="flex items-center gap-2 px-2.5 py-2 text-xs text-[var(--text-secondary)]"
+                    >
+                      <Check className="h-3.5 w-3.5 text-[var(--color-success)] shrink-0" />
+                      <span className="truncate flex-1" title={acct.email}>{acct.email}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {codexConnected && (codexStatus?.accounts?.length ?? 0) === 0 && (
+                <div className="flex items-center justify-between mb-3 px-2.5 py-2 rounded-md bg-[var(--surface-primary)]">
+                  <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                    <Check className="h-3.5 w-3.5 text-[var(--color-success)]" />
+                    <span className="truncate">{codexStatus?.email || "Signed in"}</span>
+                  </div>
+                  <span className="text-[10px] font-medium text-[var(--color-success)]">Active</span>
+                </div>
+              )}
+
+              {codexAuthUrl && codexConnecting ? (
+                <div className="rounded-lg border border-[var(--border-default)] p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Waiting for Codex sign-in…</span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-tertiary)]">
+                    Paste the callback URL from the browser after signing in.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={codexCallbackInput}
+                      onChange={(e) => setCodexCallbackInput(e.target.value)}
+                      placeholder="Paste callback URL or code"
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={submitCodexCallback}
+                      disabled={!codexCallbackInput.trim() || codexSubmitting}
+                    >
+                      {codexSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Submit"}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={codexAuthUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                    >
+                      <ExternalLink className="h-2.5 w-2.5" />
+                      Re-open login page
+                    </a>
+                    <button
+                      onClick={cancelCodexSetup}
+                      className="text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] ml-auto"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <Button
                   size="sm"
+                  variant={codexConnected ? "outline" : "default"}
                   className="w-full"
-                  onClick={connectChatGPT}
-                  disabled={chatgptConnecting}
+                  onClick={startCodexSetup}
+                  disabled={codexConnecting}
                 >
-                  {chatgptConnecting ? (
+                  {codexConnecting ? (
                     <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Waiting for sign-in…</>
+                  ) : codexConnected ? (
+                    <><RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Reconnect Codex</>
                   ) : (
-                    <><Sparkles className="h-3.5 w-3.5 mr-1.5" /> Connect with ChatGPT</>
+                    <><Zap className="h-3.5 w-3.5 mr-1.5" /> Connect Codex</>
                   )}
                 </Button>
               )}
-              {openaiError && <p className="text-xs text-[var(--color-destructive)] mt-1.5">{openaiError}</p>}
+
+              {codexError && (
+                <p className="text-xs text-[var(--color-destructive)] mt-2 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0" /> {codexError}
+                </p>
+              )}
             </>
           )}
         </ProviderOption>
@@ -828,6 +1009,7 @@ function ProjectStep({
 }) {
   const router = useRouter();
   const completeOnboarding = useSettingsStore((s) => s.completeOnboarding);
+  const setWorkspaceDirectory = useSettingsStore((s) => s.setWorkspaceDirectory);
   const [projectName, setProjectName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -838,11 +1020,15 @@ function ProjectStep({
     setCreating(true);
     setError(null);
     try {
-      const session = await api.post<SessionResponse>(API.SESSIONS.BASE, { title: name });
+      const projectPath = `${WORKSPACE_ROOT}/${name}`;
+      await api.post(API.FILES.MKDIR, { path: projectPath, scaffold: true });
+      setWorkspaceDirectory(projectPath);
       completeOnboarding();
-      router.push(`/c/${session.id}`);
-    } catch {
-      setError("Failed to create project. You can create one from the sidebar later.");
+      toast.success(`Project "${name}" created`);
+      router.push("/c/new");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create project";
+      setError(`${msg}. You can create one from the sidebar later.`);
       setCreating(false);
     }
   };

@@ -1346,16 +1346,47 @@ def ollama_status():
 
 @app.get("/api/codex/status")
 def codex_status():
-    """Check whether Codex OAuth credentials exist in openclaw.json."""
+    """List all Codex OAuth accounts found in openclaw.json and the main agent's auth-profiles.json."""
+    accounts: list[dict] = []
+    seen_emails: set[str] = set()
+
+    def _collect(profiles_obj):
+        if not isinstance(profiles_obj, dict):
+            return
+        for pid, prof in profiles_obj.items():
+            if not isinstance(prof, dict):
+                continue
+            if prof.get("provider") != "openai-codex":
+                continue
+            email = prof.get("email") or pid
+            if email in seen_emails:
+                continue
+            seen_emails.add(email)
+            accounts.append({
+                "id": pid,
+                "email": email,
+                "expires": prof.get("expires"),
+            })
+
     try:
         config = json.loads(OPENCLAW_JSON.read_text(encoding="utf-8"))
+        _collect(config.get("auth", {}).get("profiles", {}))
     except (OSError, json.JSONDecodeError):
-        return {"is_connected": False, "email": ""}
-    profiles = config.get("auth", {}).get("profiles", {})
-    for pid, prof in profiles.items():
-        if prof.get("provider") == "openai-codex":
-            return {"is_connected": True, "email": prof.get("email", "")}
-    return {"is_connected": False, "email": ""}
+        pass
+
+    try:
+        agent_auth_path = Path.home() / ".openclaw" / "agents" / "main" / "agent" / "auth-profiles.json"
+        agent_auth = json.loads(agent_auth_path.read_text(encoding="utf-8"))
+        _collect(agent_auth.get("profiles", {}))
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    first_email = accounts[0]["email"] if accounts else ""
+    return {
+        "is_connected": bool(accounts),
+        "email": first_email,
+        "accounts": accounts,
+    }
 
 
 @app.get("/api/config/openai-subscription")
@@ -2076,4 +2107,4 @@ def fts_index_post(workspace: str, session_id: str = ""):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

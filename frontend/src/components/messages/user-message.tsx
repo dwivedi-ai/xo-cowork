@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Copy, Pencil, Check, Plus, RotateCcw } from "lucide-react";
+import { Copy, Pencil, Check, Plus, RotateCcw, FolderGit2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { FileChip } from "@/components/chat/file-chip";
 import { FileMentionPopup } from "@/components/chat/file-mention-popup";
@@ -62,7 +62,25 @@ export function UserMessage({ message, isNew = true, onEditAndResend, isGenerati
     .filter((p) => p.data.type === "file")
     .map((p) => p.data as FilePartType);
 
-  const text = extractTextFromPartResponses(message.parts) || (fileParts.length > 0 ? "" : "(empty message)");
+  const rawText = extractTextFromPartResponses(message.parts) || (fileParts.length > 0 ? "" : "(empty message)");
+
+  // Detect the injected "Project context" preamble (first-message-of-project-session
+  // scaffold from use-chat.ts). If matched, split into a collapsible block + the
+  // actual user text. Uses a strict prefix + `\n---\n` divider so normal user
+  // messages that happen to start with `>` are untouched.
+  const { contextBlock, text } = useMemo(() => {
+    const marker = "\n\n---\n\n> **Project context**";
+    const idx = rawText.indexOf(marker);
+    if (idx !== -1) {
+      return {
+        text: rawText.slice(0, idx),
+        contextBlock: rawText.slice(idx + "\n\n---\n\n".length),
+      };
+    }
+    return { contextBlock: null as string | null, text: rawText };
+  }, [rawText]);
+
+  const [contextOpen, setContextOpen] = useState(false);
 
   const handleStartEdit = useCallback(() => {
     setEditText(text);
@@ -325,6 +343,38 @@ export function UserMessage({ message, isNew = true, onEditAndResend, isGenerati
         {text && (
           <div className="text-[15px] text-[var(--text-primary)] whitespace-pre-wrap break-words leading-relaxed">
             {text}
+          </div>
+        )}
+        {contextBlock && (
+          <div className="mt-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setContextOpen((v) => !v)}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-secondary)] transition-colors"
+              aria-expanded={contextOpen}
+            >
+              <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]" />
+              <span className="font-medium">Project context</span>
+              <span className="text-[var(--text-tertiary)]">attached</span>
+              <ChevronDown
+                className={`ml-auto h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)] transition-transform ${contextOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <AnimatePresence initial={false}>
+              {contextOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="overflow-hidden"
+                >
+                  <pre className="px-3 py-2 text-[12px] text-[var(--text-secondary)] whitespace-pre-wrap break-words font-mono leading-relaxed border-t border-[var(--border-default)]">
+                    {contextBlock}
+                  </pre>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
         {fileParts.length > 0 && (

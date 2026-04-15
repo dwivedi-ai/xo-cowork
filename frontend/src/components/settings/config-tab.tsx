@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   RefreshCw,
   ChevronDown,
-  ChevronRight,
   Server,
   MessageSquare,
   Bot,
@@ -15,9 +14,9 @@ import {
   Info,
   Eye,
   EyeOff,
+  FileJson,
+  AlertTriangle,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api";
 import { API } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -68,7 +67,6 @@ const FIELD_HELP: Record<string, string> = {
 
 function getFieldHelp(path: string): string | undefined {
   if (FIELD_HELP[path]) return FIELD_HELP[path];
-  // Try wildcard matches
   for (const [pattern, help] of Object.entries(FIELD_HELP)) {
     if (pattern.includes("*")) {
       const regex = new RegExp(
@@ -138,13 +136,34 @@ const SECTION_ORDER = [
 ];
 const META_SECTIONS = ["wizard", "meta"];
 
-/* ── Value rendering ──────────────────────────────────────────────────────── */
+/* ── Primitives ───────────────────────────────────────────────────────────── */
 
-function StatusBadge({ enabled }: { enabled: boolean }) {
+function StatusPill({ enabled, label }: { enabled: boolean; label?: string }) {
   return (
-    <Badge variant={enabled ? "success" : "secondary"} className="text-[10px] px-1.5 py-0">
-      {enabled ? "Enabled" : "Disabled"}
-    </Badge>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+        enabled
+          ? "border-[var(--color-success)]/30 bg-[var(--color-success)]/10 text-[var(--color-success)]"
+          : "border-[var(--border-default)] bg-[var(--surface-secondary)] text-[var(--text-tertiary)]",
+      )}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          enabled ? "bg-[var(--color-success)]" : "bg-[var(--text-tertiary)]",
+        )}
+      />
+      {label ?? (enabled ? "Enabled" : "Disabled")}
+    </span>
+  );
+}
+
+function KeyChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-[var(--border-default)] bg-[var(--surface-secondary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
+      {children}
+    </span>
   );
 }
 
@@ -153,18 +172,23 @@ function MaskedValue({ value }: { value: string }) {
   const isMasked = value.includes("****") || /\*{3,}/.test(value);
 
   if (!isMasked) {
-    return <span className="font-mono text-xs text-[var(--text-primary)]">{value}</span>;
+    return (
+      <span className="font-mono text-xs text-[var(--text-primary)]">
+        {value}
+      </span>
+    );
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-2">
       <span className="font-mono text-xs text-[var(--text-primary)]">
-        {revealed ? value : value.slice(0, 4) + "****"}
+        {revealed ? value : value.slice(0, 4) + "••••••••"}
       </span>
       <button
         type="button"
         onClick={() => setRevealed((v) => !v)}
-        className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+        className="flex h-5 w-5 items-center justify-center rounded-md text-[var(--text-tertiary)] transition-colors hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)]"
+        aria-label={revealed ? "Hide value" : "Reveal value"}
       >
         {revealed ? (
           <EyeOff className="h-3 w-3" />
@@ -178,12 +202,39 @@ function MaskedValue({ value }: { value: string }) {
 
 function HelpTooltip({ text }: { text: string }) {
   return (
-    <span className="group relative inline-flex ml-1">
-      <Info className="h-3 w-3 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-help" />
-      <span className="absolute left-5 top-0 z-50 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-secondary)] bg-[var(--surface-primary)] border border-[var(--border-default)] rounded-lg shadow-lg">
+    <span className="group/tip relative inline-flex">
+      <Info className="h-3 w-3 cursor-help text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]" />
+      <span className="pointer-events-none absolute left-5 top-0 z-50 hidden w-64 rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] p-2.5 text-[11px] leading-relaxed text-[var(--text-secondary)] shadow-lg group-hover/tip:block">
         {text}
       </span>
     </span>
+  );
+}
+
+function Row({
+  label,
+  help,
+  children,
+  depth = 0,
+}: {
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+  depth?: number;
+}) {
+  return (
+    <div
+      className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-[var(--border-default)]/40 py-2 last:border-b-0"
+      style={{ paddingLeft: depth * 14 }}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate font-mono text-[11px] text-[var(--text-secondary)]">
+          {label}
+        </span>
+        {help && <HelpTooltip text={help} />}
+      </div>
+      <div className="flex items-center justify-end text-right">{children}</div>
+    </div>
   );
 }
 
@@ -204,110 +255,110 @@ function ConfigValue({
   const [open, setOpen] = useState(depth < 2);
   const help = getFieldHelp(path);
 
-  // Primitive values
   if (value === null || value === undefined) {
     return (
-      <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-        <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-        {help && <HelpTooltip text={help} />}
-        <span className="font-mono text-xs text-[var(--text-tertiary)] italic">null</span>
-      </div>
+      <Row label={keyName} help={help} depth={depth}>
+        <span className="font-mono text-[11px] italic text-[var(--text-tertiary)]">
+          null
+        </span>
+      </Row>
     );
   }
 
   if (typeof value === "boolean") {
-    // Special handling for "enabled" fields
-    if (keyName === "enabled") {
-      return (
-        <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-          <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-          {help && <HelpTooltip text={help} />}
-          <StatusBadge enabled={value} />
-        </div>
-      );
-    }
     return (
-      <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-        <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-        {help && <HelpTooltip text={help} />}
-        <Badge variant={value ? "success" : "secondary"} className="text-[10px] px-1.5 py-0">
-          {value ? "true" : "false"}
-        </Badge>
-      </div>
+      <Row label={keyName} help={help} depth={depth}>
+        <StatusPill
+          enabled={value}
+          label={keyName === "enabled" ? undefined : value ? "True" : "False"}
+        />
+      </Row>
     );
   }
 
   if (typeof value === "number") {
     return (
-      <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-        <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-        {help && <HelpTooltip text={help} />}
-        <span className="font-mono text-xs text-[var(--brand-primary)]">{value}</span>
-      </div>
+      <Row label={keyName} help={help} depth={depth}>
+        <span className="font-mono text-xs tabular-nums text-[var(--text-primary)]">
+          {value}
+        </span>
+      </Row>
     );
   }
 
   if (typeof value === "string") {
     return (
-      <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-        <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-        {help && <HelpTooltip text={help} />}
+      <Row label={keyName} help={help} depth={depth}>
         <MaskedValue value={value} />
-      </div>
+      </Row>
     );
   }
 
-  // Arrays
   if (Array.isArray(value)) {
     if (value.length === 0) {
       return (
-        <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-          <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-          {help && <HelpTooltip text={help} />}
-          <span className="font-mono text-xs text-[var(--text-tertiary)] italic">[]</span>
-        </div>
+        <Row label={keyName} help={help} depth={depth}>
+          <span className="font-mono text-[11px] italic text-[var(--text-tertiary)]">
+            [ ]
+          </span>
+        </Row>
       );
     }
 
-    // Simple string/number arrays shown inline
     if (value.every((v) => typeof v === "string" || typeof v === "number")) {
       return (
-        <div className="py-1" style={{ paddingLeft: depth * 16 }}>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
+        <div
+          className="border-b border-[var(--border-default)]/40 py-2 last:border-b-0"
+          style={{ paddingLeft: depth * 14 }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+              {keyName}
+            </span>
             {help && <HelpTooltip text={help} />}
+            <span className="ml-auto text-[10px] text-[var(--text-tertiary)]">
+              {value.length}
+            </span>
           </div>
-          <div className="flex flex-wrap gap-1 mt-1 ml-4">
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {value.map((v, i) => (
-              <Badge key={i} variant="outline" className="text-[10px] font-mono">
-                {String(v)}
-              </Badge>
+              <KeyChip key={i}>{String(v)}</KeyChip>
             ))}
           </div>
         </div>
       );
     }
 
-    // Complex arrays (like agents.list)
     return (
-      <div className="py-1" style={{ paddingLeft: depth * 16 }}>
+      <div
+        className="border-b border-[var(--border-default)]/40 py-2 last:border-b-0"
+        style={{ paddingLeft: depth * 14 }}
+      >
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          className="flex w-full items-center gap-1.5 text-left transition-colors"
+          type="button"
         >
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {keyName}
-          <span className="text-[10px] text-[var(--text-tertiary)] ml-1">
-            ({value.length} {value.length === 1 ? "item" : "items"})
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 shrink-0 text-[var(--text-tertiary)] transition-transform",
+              !open && "-rotate-90",
+            )}
+          />
+          <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+            {keyName}
+          </span>
+          {help && <HelpTooltip text={help} />}
+          <span className="ml-auto font-mono text-[10px] text-[var(--text-tertiary)]">
+            {value.length} {value.length === 1 ? "item" : "items"}
           </span>
         </button>
-        {help && <HelpTooltip text={help} />}
         {open && (
-          <div className="mt-1 space-y-1">
+          <div className="mt-2 space-y-2">
             {value.map((item, i) => (
               <div
                 key={i}
-                className="ml-4 border-l-2 border-[var(--border-default)] pl-3"
+                className="ml-3 rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)]/60 px-3 py-2"
               >
                 {typeof item === "object" && item !== null ? (
                   Object.entries(item).map(([k, v]) => (
@@ -332,27 +383,41 @@ function ConfigValue({
     );
   }
 
-  // Objects
   if (typeof value === "object") {
     const entries = Object.entries(value);
     if (entries.length === 0) {
       return (
-        <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 16 }}>
-          <span className="text-xs font-medium text-[var(--text-secondary)]">{keyName}</span>
-          <span className="font-mono text-xs text-[var(--text-tertiary)] italic">{"{}"}</span>
-        </div>
+        <Row label={keyName} help={help} depth={depth}>
+          <span className="font-mono text-[11px] italic text-[var(--text-tertiary)]">
+            {"{ }"}
+          </span>
+        </Row>
       );
     }
 
     return (
-      <div className="py-0.5" style={{ paddingLeft: depth * 16 }}>
+      <div
+        className="border-b border-[var(--border-default)]/40 py-1 last:border-b-0"
+        style={{ paddingLeft: depth * 14 }}
+      >
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          className="flex w-full items-center gap-1.5"
+          type="button"
         >
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {keyName}
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 shrink-0 text-[var(--text-tertiary)] transition-transform",
+              !open && "-rotate-90",
+            )}
+          />
+          <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+            {keyName}
+          </span>
           {help && <HelpTooltip text={help} />}
+          <span className="ml-auto font-mono text-[10px] text-[var(--text-tertiary)]">
+            {entries.length}
+          </span>
         </button>
         {open && (
           <div className="mt-0.5">
@@ -386,42 +451,63 @@ function ChannelCard({
 }) {
   const [open, setOpen] = useState(false);
   const enabled = config.enabled !== false;
+  const initials = name.slice(0, 2).toUpperCase();
 
   return (
     <div
       className={cn(
-        "rounded-xl border p-3 transition-colors",
+        "overflow-hidden rounded-xl border bg-[var(--surface-primary)] transition-all",
         enabled
-          ? "border-[var(--border-default)] bg-[var(--surface-primary)]"
-          : "border-[var(--border-default)] bg-[var(--surface-secondary)] opacity-60",
+          ? "border-[var(--border-default)]"
+          : "border-[var(--border-default)] opacity-70",
       )}
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-between w-full"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--surface-secondary)]"
+        type="button"
       >
-        <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-3.5 w-3.5 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />}
-          <span className="text-sm font-medium text-[var(--text-primary)] capitalize">
-            {name}
-          </span>
-          <StatusBadge enabled={enabled} />
-        </div>
-        <div className="flex items-center gap-2">
-          {config.dmPolicy && (
-            <Badge variant="outline" className="text-[10px]">
-              DM: {config.dmPolicy}
-            </Badge>
+        <div
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border font-mono text-[11px] font-bold tracking-wider",
+            enabled
+              ? "border-[var(--border-default)] bg-[var(--surface-secondary)] text-[var(--text-primary)]"
+              : "border-[var(--border-default)] bg-[var(--surface-secondary)] text-[var(--text-tertiary)]",
           )}
-          {config.groupPolicy && (
-            <Badge variant="outline" className="text-[10px]">
-              Groups: {config.groupPolicy}
-            </Badge>
-          )}
+        >
+          {initials}
         </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold capitalize text-[var(--text-primary)]">
+              {name}
+            </span>
+            <StatusPill enabled={enabled} />
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-tertiary)]">
+            {config.dmPolicy && (
+              <span className="font-mono">DM · {config.dmPolicy}</span>
+            )}
+            {config.dmPolicy && config.groupPolicy && (
+              <span className="text-[var(--border-default)]">•</span>
+            )}
+            {config.groupPolicy && (
+              <span className="font-mono">Groups · {config.groupPolicy}</span>
+            )}
+          </div>
+        </div>
+
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-[var(--text-tertiary)] transition-transform",
+            !open && "-rotate-90",
+          )}
+        />
       </button>
+
       {open && (
-        <div className="mt-3 pt-2 border-t border-[var(--border-default)]">
+        <div className="border-t border-[var(--border-default)] bg-[var(--surface-secondary)]/40 px-4 py-2">
           {Object.entries(config)
             .filter(([k]) => k !== "enabled")
             .map(([k, v]) => (
@@ -448,29 +534,57 @@ function AgentCard({
   agent: Record<string, any>;
 }) {
   const [open, setOpen] = useState(false);
+  const displayName = agent.name || agent.id;
+  const initial = displayName?.slice(0, 1).toUpperCase() || "?";
 
   return (
-    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] p-3">
+    <div className="overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)]">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-between w-full"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--surface-secondary)]"
+        type="button"
       >
-        <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-3.5 w-3.5 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />}
-          <span className="text-sm font-medium text-[var(--text-primary)]">
-            {agent.name || agent.id}
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)]">
+          <span className="font-mono text-sm font-semibold text-[var(--text-primary)]">
+            {initial}
           </span>
-          <Badge variant="outline" className="text-[10px] font-mono">
-            {agent.id}
-          </Badge>
         </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-[var(--text-primary)]">
+              {displayName}
+            </span>
+            <KeyChip>{agent.id}</KeyChip>
+          </div>
+          {agent.workspace && (
+            <div
+              className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-tertiary)]"
+              title={agent.workspace}
+            >
+              {agent.workspace}
+            </div>
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-[var(--text-tertiary)] transition-transform",
+            !open && "-rotate-90",
+          )}
+        />
       </button>
+
       {open && (
-        <div className="mt-3 pt-2 border-t border-[var(--border-default)]">
+        <div className="border-t border-[var(--border-default)] bg-[var(--surface-secondary)]/40 px-4 py-2">
           {Object.entries(agent)
             .filter(([k]) => k !== "id" && k !== "name")
             .map(([k, v]) => (
-              <ConfigValue key={k} keyName={k} value={v} path={`agents.list.${k}`} depth={0} />
+              <ConfigValue
+                key={k}
+                keyName={k}
+                value={v}
+                path={`agents.list.${k}`}
+                depth={0}
+              />
             ))}
         </div>
       )}
@@ -488,15 +602,111 @@ function PluginRow({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config: Record<string, any>;
 }) {
+  const enabled = config.enabled !== false;
+  const initial = name.slice(0, 1).toUpperCase();
+
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-[var(--surface-secondary)] transition-colors">
-      <span className="text-xs font-medium text-[var(--text-primary)] capitalize">{name}</span>
-      <StatusBadge enabled={config.enabled !== false} />
+    <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface-secondary)]">
+      <div
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border font-mono text-[11px] font-bold",
+          enabled
+            ? "border-[var(--border-default)] bg-[var(--surface-secondary)] text-[var(--text-primary)]"
+            : "border-[var(--border-default)] bg-[var(--surface-secondary)] text-[var(--text-tertiary)]",
+        )}
+      >
+        {initial}
+      </div>
+      <span className="flex-1 text-sm font-medium capitalize text-[var(--text-primary)]">
+        {name}
+      </span>
+      <StatusPill enabled={enabled} />
     </div>
   );
 }
 
-/* ── Section wrapper ──────────────────────────────────────────────────────── */
+/* ── Section card shell ───────────────────────────────────────────────────── */
+
+function SectionShell({
+  icon: Icon,
+  label,
+  description,
+  summary,
+  defaultOpen = true,
+  children,
+}: {
+  icon: typeof Server;
+  label: string;
+  description: string;
+  summary?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-primary)]">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-start gap-4 p-5 text-left transition-colors hover:bg-[var(--surface-secondary)]/50"
+        type="button"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)]">
+          <Icon className="h-4.5 w-4.5 text-[var(--text-primary)]" />
+        </div>
+
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="text-sm font-semibold leading-none text-[var(--text-primary)]">
+              {label}
+            </h3>
+            {summary}
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+            {description}
+          </p>
+        </div>
+
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 translate-y-1 text-[var(--text-tertiary)] transition-transform",
+            !open && "-rotate-90",
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="border-t border-[var(--border-default)] bg-[var(--surface-secondary)]/30 p-5">
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SubHeading({
+  label,
+  count,
+}: {
+  label: string;
+  count?: number | string;
+}) {
+  return (
+    <div className="mb-2.5 flex items-center gap-2 px-1">
+      <h4 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+        {label}
+      </h4>
+      {count !== undefined && (
+        <span className="rounded-sm bg-[var(--surface-secondary)] px-1 py-px font-mono text-[10px] text-[var(--text-secondary)]">
+          {count}
+        </span>
+      )}
+      <div className="h-px flex-1 bg-[var(--border-default)]" />
+    </div>
+  );
+}
+
+/* ── Section rendering variants ───────────────────────────────────────────── */
 
 function ConfigSection({
   sectionKey,
@@ -508,174 +718,155 @@ function ConfigSection({
   data: any;
   meta: SectionMeta;
 }) {
-  const [open, setOpen] = useState(true);
-  const Icon = meta.icon;
-
-  // Custom rendering for channels
+  // Channels: grid of channel cards
   if (sectionKey === "channels" && typeof data === "object" && data !== null) {
+    const entries = Object.entries(data);
+    const enabledCount = entries.filter(
+      ([, cfg]) => (cfg as { enabled?: boolean })?.enabled !== false,
+    ).length;
     return (
-      <section className="space-y-3">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 w-full"
-        >
-          {open ? <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />}
-          <Icon className="h-4 w-4 text-[var(--text-secondary)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            {meta.label}
-          </h3>
-          <span className="text-xs text-[var(--text-tertiary)]">
-            {meta.description}
+      <SectionShell
+        icon={meta.icon}
+        label={meta.label}
+        description={meta.description}
+        summary={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+            <span className="font-mono">{entries.length}</span>
+            <span className="text-[var(--text-tertiary)]">·</span>
+            <span className="text-[var(--color-success)]">
+              {enabledCount} active
+            </span>
           </span>
-        </button>
-        {open && (
-          <div className="space-y-2 ml-6">
-            {Object.entries(data).map(([name, cfg]) => (
-              <ChannelCard
-                key={name}
-                name={name}
-                config={cfg as Record<string, unknown>}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+        }
+      >
+        <div className="grid gap-2">
+          {entries.map(([name, cfg]) => (
+            <ChannelCard
+              key={name}
+              name={name}
+              config={cfg as Record<string, unknown>}
+            />
+          ))}
+        </div>
+      </SectionShell>
     );
   }
 
-  // Custom rendering for agents
+  // Agents: defaults + cards list
   if (sectionKey === "agents" && typeof data === "object" && data !== null) {
+    const list = Array.isArray(data.list) ? data.list : [];
     return (
-      <section className="space-y-3">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 w-full"
-        >
-          {open ? <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />}
-          <Icon className="h-4 w-4 text-[var(--text-secondary)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            {meta.label}
-          </h3>
-          <span className="text-xs text-[var(--text-tertiary)]">
-            {meta.description}
+      <SectionShell
+        icon={meta.icon}
+        label={meta.label}
+        description={meta.description}
+        summary={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+            <span className="font-mono">{list.length}</span>
+            <span>{list.length === 1 ? "agent" : "agents"}</span>
           </span>
-        </button>
-        {open && (
-          <div className="ml-6 space-y-4">
-            {/* Defaults */}
-            {data.defaults && (
-              <div>
-                <h4 className="text-xs font-semibold text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-                  Defaults
-                </h4>
-                <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] p-3">
-                  {Object.entries(data.defaults).map(([k, v]) => (
-                    <ConfigValue
-                      key={k}
-                      keyName={k}
-                      value={v}
-                      path={`agents.defaults.${k}`}
-                      depth={0}
-                    />
-                  ))}
-                </div>
+        }
+      >
+        <div className="space-y-5">
+          {data.defaults && (
+            <div>
+              <SubHeading label="Defaults" />
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] px-4 py-2">
+                {Object.entries(data.defaults).map(([k, v]) => (
+                  <ConfigValue
+                    key={k}
+                    keyName={k}
+                    value={v}
+                    path={`agents.defaults.${k}`}
+                    depth={0}
+                  />
+                ))}
               </div>
-            )}
-            {/* Agent list */}
-            {data.list && Array.isArray(data.list) && (
-              <div>
-                <h4 className="text-xs font-semibold text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-                  Agents ({data.list.length})
-                </h4>
-                <div className="space-y-2">
-                  {data.list.map(
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (agent: Record<string, any>, i: number) => (
-                      <AgentCard key={agent.id || i} agent={agent} />
-                    ),
-                  )}
-                </div>
+            </div>
+          )}
+
+          {list.length > 0 && (
+            <div>
+              <SubHeading label="Agents" count={list.length} />
+              <div className="grid gap-2">
+                {list.map(
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (agent: Record<string, any>, i: number) => (
+                    <AgentCard key={agent.id || i} agent={agent} />
+                  ),
+                )}
               </div>
-            )}
-          </div>
-        )}
-      </section>
+            </div>
+          )}
+        </div>
+      </SectionShell>
     );
   }
 
-  // Custom rendering for plugins
+  // Plugins
   if (
     sectionKey === "plugins" &&
     typeof data === "object" &&
     data !== null &&
     data.entries
   ) {
+    const entries = Object.entries(data.entries);
+    const enabledCount = entries.filter(
+      ([, cfg]) => (cfg as { enabled?: boolean })?.enabled !== false,
+    ).length;
+
     return (
-      <section className="space-y-3">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 w-full"
-        >
-          {open ? <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />}
-          <Icon className="h-4 w-4 text-[var(--text-secondary)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            {meta.label}
-          </h3>
-          <span className="text-xs text-[var(--text-tertiary)]">
-            {meta.description}
+      <SectionShell
+        icon={meta.icon}
+        label={meta.label}
+        description={meta.description}
+        summary={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--surface-secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+            <span className="font-mono">{enabledCount}</span>
+            <span>/</span>
+            <span className="font-mono">{entries.length}</span>
+            <span className="text-[var(--text-tertiary)]">enabled</span>
           </span>
-        </button>
-        {open && (
-          <div className="ml-6 rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] divide-y divide-[var(--border-default)]">
-            {Object.entries(data.entries).map(([name, cfg]) => (
-              <PluginRow
-                key={name}
-                name={name}
-                config={cfg as Record<string, unknown>}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+        }
+      >
+        <div className="overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] divide-y divide-[var(--border-default)]">
+          {entries.map(([name, cfg]) => (
+            <PluginRow
+              key={name}
+              name={name}
+              config={cfg as Record<string, unknown>}
+            />
+          ))}
+        </div>
+      </SectionShell>
     );
   }
 
-  // Generic section rendering
+  // Generic
   return (
-    <section className="space-y-3">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 w-full"
-      >
-        {open ? <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" /> : <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />}
-        <Icon className="h-4 w-4 text-[var(--text-secondary)]" />
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-          {meta.label}
-        </h3>
-        <span className="text-xs text-[var(--text-tertiary)]">
-          {meta.description}
-        </span>
-      </button>
-      {open && (
-        <div className="ml-6 rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] p-3">
-          {typeof data === "object" && data !== null ? (
-            Object.entries(data).map(([k, v]) => (
-              <ConfigValue
-                key={k}
-                keyName={k}
-                value={v}
-                path={`${sectionKey}.${k}`}
-                depth={0}
-              />
-            ))
-          ) : (
-            <span className="font-mono text-xs text-[var(--text-primary)]">
-              {JSON.stringify(data)}
-            </span>
-          )}
-        </div>
-      )}
-    </section>
+    <SectionShell
+      icon={meta.icon}
+      label={meta.label}
+      description={meta.description}
+    >
+      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] px-4 py-2">
+        {typeof data === "object" && data !== null ? (
+          Object.entries(data).map(([k, v]) => (
+            <ConfigValue
+              key={k}
+              keyName={k}
+              value={v}
+              path={`${sectionKey}.${k}`}
+              depth={0}
+            />
+          ))
+        ) : (
+          <span className="font-mono text-xs text-[var(--text-primary)]">
+            {JSON.stringify(data)}
+          </span>
+        )}
+      </div>
+    </SectionShell>
   );
 }
 
@@ -705,88 +896,153 @@ export function ConfigTab() {
     load();
   }, [load]);
 
+  const topLevelStats = useMemo(() => {
+    if (!config) return { keys: 0, sections: 0 };
+    const allKeys = Object.keys(config).filter((k) => !k.startsWith("$"));
+    const sections = allKeys.filter(
+      (k) => SECTION_ORDER.includes(k) || META_SECTIONS.includes(k),
+    );
+    return { keys: allKeys.length, sections: sections.length };
+  }, [config]);
+
+  const unknownKeys = useMemo(() => {
+    if (!config) return [];
+    return Object.keys(config).filter(
+      (k) =>
+        !SECTION_ORDER.includes(k) &&
+        !META_SECTIONS.includes(k) &&
+        !k.startsWith("$"),
+    );
+  }, [config]);
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <section>
-        <div className="flex items-start justify-between mb-1">
-          <div>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-              OpenClaw Configuration
-            </h2>
-            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
-              Visual overview of{" "}
-              <code className="font-mono">~/.openclaw/openclaw.json</code>
-              {" "}&mdash; sensitive values like tokens and API keys are masked.
-            </p>
+      {/* Hero header */}
+      <div className="relative overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-secondary)]">
+        <div className="pointer-events-none absolute -right-10 -top-10 opacity-[0.04]">
+          <FileJson className="h-56 w-56 text-[var(--text-primary)]" />
+        </div>
+
+        <div className="relative flex items-start gap-4 p-5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] shadow-sm">
+            <FileJson className="h-5 w-5 text-[var(--text-primary)]" />
           </div>
+
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              <h2 className="text-base font-semibold leading-none text-[var(--text-primary)]">
+                OpenClaw Configuration
+              </h2>
+              <span className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
+                ~/.openclaw/openclaw.json
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+              Live view of your workspace config. Sensitive values like tokens
+              and API keys are masked by default — click the eye icon to reveal.
+            </p>
+
+            {config && !loading && (
+              <div className="mt-3 flex items-center gap-3 text-[10px] font-mono text-[var(--text-tertiary)]">
+                <span>
+                  <span className="text-[var(--text-secondary)]">
+                    {topLevelStats.sections}
+                  </span>{" "}
+                  sections
+                </span>
+                <span className="text-[var(--border-default)]">•</span>
+                <span>
+                  <span className="text-[var(--text-secondary)]">
+                    {topLevelStats.keys}
+                  </span>{" "}
+                  top-level keys
+                </span>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={load}
             disabled={loading}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors disabled:opacity-40"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 text-xs font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--text-primary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             title="Reload"
+            type="button"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+            />
+            Reload
           </button>
         </div>
-      </section>
-
-      <Separator />
+      </div>
 
       {/* Loading skeleton */}
       {loading && (
-        <div className="space-y-4">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="space-y-2">
-              <div className="h-5 w-32 rounded bg-[var(--surface-secondary)] animate-pulse" />
-              <div className="h-20 rounded-xl bg-[var(--surface-secondary)] animate-pulse" />
-            </div>
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div
+              key={n}
+              className="h-[88px] animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--surface-primary)]"
+              style={{ animationDelay: `${n * 80}ms` }}
+            />
           ))}
         </div>
       )}
 
       {/* Error */}
       {error && !loading && (
-        <div className="rounded-xl border border-[var(--color-destructive)] bg-[var(--surface-secondary)] p-4">
-          <p className="text-xs text-[var(--color-destructive)]">{error}</p>
+        <div className="flex items-start gap-3 rounded-2xl border border-[var(--color-destructive)]/30 bg-[var(--color-destructive)]/5 p-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--color-destructive)]/30 bg-[var(--color-destructive)]/10">
+            <AlertTriangle className="h-4 w-4 text-[var(--color-destructive)]" />
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-sm font-medium text-[var(--color-destructive)]">
+              Failed to load configuration
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+              {error}
+            </p>
+          </div>
+          <button
+            onClick={load}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-secondary)]"
+            type="button"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry
+          </button>
         </div>
       )}
 
       {/* Config sections */}
       {config && !loading && (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {SECTION_ORDER.filter((key) => config[key] !== undefined).map(
             (key) => (
-              <div key={key}>
-                <ConfigSection
-                  sectionKey={key}
-                  data={config[key]}
-                  meta={
-                    SECTION_META[key] || {
-                      icon: Info,
-                      label: key,
-                      description: "",
-                    }
+              <ConfigSection
+                key={key}
+                sectionKey={key}
+                data={config[key]}
+                meta={
+                  SECTION_META[key] || {
+                    icon: Info,
+                    label: key,
+                    description: "",
                   }
-                />
-                <Separator className="mt-6" />
-              </div>
+                }
+              />
             ),
           )}
 
           {/* Meta info (wizard, meta) */}
           {META_SECTIONS.some((k) => config[k]) && (
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Info className="h-4 w-4 text-[var(--text-secondary)]" />
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Metadata
-                </h3>
-                <span className="text-xs text-[var(--text-tertiary)]">
-                  Wizard state and version tracking
-                </span>
-              </div>
-              <div className="ml-6 rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] p-3">
+            <SectionShell
+              icon={Info}
+              label="Metadata"
+              description="Wizard state and version tracking"
+              defaultOpen={false}
+            >
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] px-4 py-2">
                 {META_SECTIONS.filter((k) => config[k]).map((k) => (
                   <ConfigValue
                     key={k}
@@ -797,41 +1053,34 @@ export function ConfigTab() {
                   />
                 ))}
               </div>
-            </section>
+            </SectionShell>
           )}
 
           {/* Unrecognized top-level keys */}
-          {Object.keys(config)
-            .filter(
-              (k) =>
-                !SECTION_ORDER.includes(k) &&
-                !META_SECTIONS.includes(k) &&
-                !k.startsWith("$"),
-            )
-            .length > 0 && (
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Info className="h-4 w-4 text-[var(--color-warning)]" />
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Other
-                </h3>
-                <span className="text-xs text-[var(--text-tertiary)]">
-                  Additional top-level keys not in the standard schema
+          {unknownKeys.length > 0 && (
+            <SectionShell
+              icon={AlertTriangle}
+              label="Unrecognized keys"
+              description="Additional top-level keys not in the standard schema"
+              defaultOpen={false}
+              summary={
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-secondary)] px-2 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
+                  {unknownKeys.length}
                 </span>
+              }
+            >
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] px-4 py-2">
+                {unknownKeys.map((k) => (
+                  <ConfigValue
+                    key={k}
+                    keyName={k}
+                    value={config[k]}
+                    path={k}
+                    depth={0}
+                  />
+                ))}
               </div>
-              <div className="ml-6 rounded-xl border border-[var(--border-default)] bg-[var(--surface-primary)] p-3">
-                {Object.entries(config)
-                  .filter(
-                    ([k]) =>
-                      !SECTION_ORDER.includes(k) &&
-                      !META_SECTIONS.includes(k) &&
-                      !k.startsWith("$"),
-                  )
-                  .map(([k, v]) => (
-                    <ConfigValue key={k} keyName={k} value={v} path={k} depth={0} />
-                  ))}
-              </div>
-            </section>
+            </SectionShell>
           )}
         </div>
       )}

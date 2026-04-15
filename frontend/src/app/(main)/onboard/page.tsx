@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSettingsStore } from "@/stores/settings-store";
+import { useRouter } from "next/navigation";
 
 export default function OnboardPage() {
-  useEffect(() => {
-    // Reset so the onboarding overlay renders (handled by the layout)
-    useSettingsStore.setState({ hasCompletedOnboarding: false });
-  }, []);
+  const router = useRouter();
 
-  // The layout renders <OnboardingScreen /> whenever hasCompletedOnboarding is false
+  useEffect(() => {
+    router.replace("/c/new");
+  }, [router]);
+
   return null;
 }
