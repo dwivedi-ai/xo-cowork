@@ -78,7 +78,7 @@ export function useChat(currentSessionId?: string) {
         const isProjectScoped =
           !currentSessionId && ws && ws !== WORKSPACE_ROOT && ws.startsWith(WORKSPACE_ROOT + "/");
         const promptText = isProjectScoped
-          ? `[CONTEXT] Working directory for this session: ${ws}\nRefer to AGENTS.md, WORKSPACE.md, and OBJECTIVES.md in this directory for project instructions, workspace details, and objectives. All files you create or modify must be within this directory.\n\n${text.trim()}`
+          ? `${text.trim()}\n\n---\n\n> **Project context**\n> Working directory: \`${ws}\`\n>\n> The project charter lives in this directory:\n> - \`WORKSPACE.md\` — mission, architecture, boundaries, current focus\n> - \`OBJECTIVES.md\` — OKR table, key results, weekly plan\n> - \`AGENTS.md\` — execution rules and the logs you must append to\n> - \`sessions.json\` — index of prior sessions in this project\n>\n> **Rules**\n> - Read the three charter files before making changes on any non-trivial task.\n> - Check \`sessions.json\` for prior work; avoid duplication, build on decisions.\n> - Keep all file writes inside the working directory above.\n> - At task end, append a row to the relevant log in \`AGENTS.md\` using its Reporting Format.`
           : text.trim();
 
         const res = await api.post<PromptResponse>(API.CHAT.PROMPT, {
