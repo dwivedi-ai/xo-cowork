@@ -25,6 +25,8 @@ import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { OnboardingScreen } from "@/components/onboarding/onboarding-screen";
 import { useAutoDetectProvider } from "@/hooks/use-auto-detect-provider";
 import { useActivityStore } from "@/stores/activity-store";
 import { useArtifactStore } from "@/stores/artifact-store";
@@ -68,6 +70,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const isDesktop = useIsDesktop();
   const qc = useQueryClient();
   useAutoDetectProvider();
+
+  const hasCompletedOnboarding = useSettingsStore((s) => s.hasCompletedOnboarding);
 
   const isConnected = useAuthStore((s) => s.isConnected);
   const proxyUrl = useAuthStore((s) => s.proxyUrl);
@@ -203,7 +207,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       {/* Splash screen for desktop app initialization */}
       {showSplash && <SplashScreen />}
 
-      {/* Onboarding removed — bridge provides models directly */}
+      {/* Onboarding flow — shown to first-time users */}
+      {!hasCompletedOnboarding && <OnboardingScreen />}
 
       {/* Top progress bar for route transitions */}
       <RouteProgressBar />
