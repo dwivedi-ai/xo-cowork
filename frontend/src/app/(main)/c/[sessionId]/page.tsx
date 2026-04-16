@@ -1,13 +1,12 @@
 import { Suspense } from "react";
 import { SessionPageClient } from "./session-page-client";
 
-/**
- * Required for Next.js static export — dynamic routes need this.
- * Returning at least one entry prevents Next.js from failing to detect the function.
- * Actual sessions are resolved client-side via useParams in the Electron app.
- */
+// Server mode: render on demand. Desktop static export uses a different
+// build (see next.config.ts) and is out of scope here.
+export const dynamic = "force-dynamic";
+
 export async function generateStaticParams() {
-  return [{ sessionId: "_" }];
+  return [];
 }
 
 export default async function SessionPage({

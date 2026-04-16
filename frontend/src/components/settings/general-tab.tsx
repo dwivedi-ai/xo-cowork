@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sun, Moon, Monitor, Check, Eye, EyeOff } from "lucide-react";
+import { Sun, Moon, Monitor, Check, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";

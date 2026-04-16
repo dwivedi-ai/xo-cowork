@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Minus, Square, X, Copy, Plus } from "lucide-react";
 import { IS_DESKTOP, TITLE_BAR_HEIGHT } from "@/lib/constants";
@@ -9,12 +10,14 @@ import { desktopAPI } from "@/lib/tauri-api";
 /** XO-Cowork logo rendered at title bar size. */
 function XoCoworkLogo() {
   return (
-    <img
+    <Image
       src="/favicon.svg"
       width={18}
       height={18}
       alt="XO-Cowork"
       className="shrink-0"
+      unoptimized
+      priority
     />
   );
 }

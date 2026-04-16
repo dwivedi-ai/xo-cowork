@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Loader2, Download, Play, Square, RotateCw, RefreshCw, Eye, EyeOff, ExternalLink, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";

@@ -125,8 +125,6 @@ export function useSSE(streamId: string | null) {
       });
       reasoningBufferRef.current = reasoningBuffer;
 
-      console.log("[SSE] Creating SSEClient for stream:", streamId, "lastEventId:", persistedLastEventId);
-
       const client = new SSEClient({
         url: API.CHAT.STREAM(streamId),
         // Re-resolve URL on each reconnect so port changes (backend restart) are picked up
@@ -134,10 +132,8 @@ export function useSSE(streamId: string | null) {
         initialLastEventId: persistedLastEventId,
         onEvent: () => {
           lastEventTimestamp = Date.now();
-          console.log("[SSE] Event received at", Date.now());
         },
         onStatusChange: (status) => {
-          console.log("[SSE] Status changed:", status);
           connectionStore.getState().setStatus(status);
           if (status === "disconnected") {
             // Connection permanently lost — clean up streaming state.
@@ -414,14 +410,12 @@ export function useSSE(streamId: string | null) {
     // Interactive: Question
     client.on(SSE_EVENTS.QUESTION, (data, id) => {
       persistedLastEventId = id;
-      console.log("[SSE] QUESTION event received:", { call_id: data.call_id, id, hasArgs: !!data.arguments });
       if (data.call_id) {
         store.getState().setQuestion({
           callId: data.call_id,
           tool: data.tool ?? "question",
           arguments: data.arguments ?? { question: data.question, options: data.options, questions: data.questions },
         });
-        console.log("[SSE] pendingQuestion set:", store.getState().pendingQuestion?.callId);
       }
     });
 

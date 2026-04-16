@@ -1,7 +1,7 @@
-"use client";
+import PageClient from "./page-client";
 
-import { Landing } from "@/components/chat/landing";
+export const dynamic = "force-dynamic";
 
-export default function NewChatPage() {
-  return <Landing />;
+export default function Page() {
+  return <PageClient />;
 }
