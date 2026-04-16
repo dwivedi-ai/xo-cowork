@@ -61,11 +61,21 @@ def openclaw_agent_id_from_prompt_body(body: dict) -> str:
 async def create_new_session(text: str, session_key: str) -> tuple[str, str, str]:
     """
     Create a new OpenClaw session by sending the first message.
-    Makes a non-streaming call to establish the session, then returns
-    (session_key, session_id, response_text).
+
+    EXPERIMENT (2026-04-16): trying `stream=True` on the bootstrap call to
+    see if the historical "bootstrap-duplicate" issue still reproduces.
+    If the returned `response_text` contains duplicated content (or users
+    report seeing the response twice in the UI), revert this to
+    `stream=False` — see `bridge/docs/known-issues.md`.
+
+    Behavior is otherwise preserved: we accumulate the streamed deltas
+    into a single buffer and return the same tuple as before, so
+    `emit_prefetched_sse` continues to fake-stream it to the client.
     """
+    response_text = ""
     async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=10.0)) as client:
-        response = await client.post(
+        async with client.stream(
+            "POST",
             OPENCLAW_API_URL,
             headers={
                 "Authorization": f"Bearer {OPENCLAW_API_KEY}",
@@ -74,21 +84,31 @@ async def create_new_session(text: str, session_key: str) -> tuple[str, str, str
             },
             json={
                 "model": OPENCLAW_MODEL,
-                "stream": False,
+                "stream": True,
                 "messages": [{"role": "user", "content": text}],
             },
-        )
+        ) as response:
+            if response.status_code != 200:
+                body = await response.aread()
+                raise Exception(f"OpenClaw API error: {response.status_code} {body.decode()}")
 
-    if response.status_code != 200:
-        raise Exception(f"OpenClaw API error: {response.status_code} {response.text}")
-
-    # Extract response text
-    data = response.json()
-    response_text = ""
-    choices = data.get("choices", [])
-    if choices:
-        message = choices[0].get("message", {})
-        response_text = message.get("content", "")
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                choices = chunk.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
+                content = delta.get("content")
+                if content:
+                    response_text += content
 
     # Read sessions.json to find the new session ID
     session_id = find_session_id_by_key(session_key)

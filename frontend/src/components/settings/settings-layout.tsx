@@ -29,6 +29,14 @@ const SETTINGS_TABS = [
 
 type TabId = (typeof SETTINGS_TABS)[number]["id"];
 
+// Tabs currently hidden from the settings navigation. Their content is still
+// wired up and reachable by direct URL (e.g. /settings?tab=automations), so
+// re-enabling is a one-line change — remove the id from this set.
+// Noted in CLAUDE.md → "Hidden UI features".
+const HIDDEN_TABS: ReadonlySet<TabId> = new Set<TabId>(["automations", "plugins"]);
+
+const VISIBLE_SETTINGS_TABS = SETTINGS_TABS.filter((tab) => !HIDDEN_TABS.has(tab.id));
+
 export default function SettingsPageClient() {
   const { t } = useTranslation(["settings", "usage"]);
   const router = useRouter();
@@ -61,7 +69,7 @@ export default function SettingsPageClient() {
 
         {/* Mobile tab pills */}
         <div className="flex gap-1 overflow-x-auto pb-4 lg:hidden">
-          {SETTINGS_TABS.map(({ id, icon: Icon, labelKey }) => (
+          {VISIBLE_SETTINGS_TABS.map(({ id, icon: Icon, labelKey }) => (
             <button
               key={id}
               onClick={() => navigateTab(id)}
@@ -83,7 +91,7 @@ export default function SettingsPageClient() {
           {/* Left nav (desktop only) */}
           <nav className="hidden lg:block">
             <div className="sticky top-8 space-y-1">
-              {SETTINGS_TABS.map(({ id, icon: Icon, labelKey }) => (
+              {VISIBLE_SETTINGS_TABS.map(({ id, icon: Icon, labelKey }) => (
                 <button
                   key={id}
                   onClick={() => navigateTab(id)}

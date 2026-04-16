@@ -105,3 +105,100 @@ than guesswork. Revisit once structural refactors are stable.
 `frontend/src/components/chat/landing.tsx`,
 `frontend/src/components/messages/assistant-message.tsx`,
 `frontend/next.config.ts`.
+
+---
+
+## 2026-04-16 — "Reconnecting to server…" banner during long agent turns
+
+**Area:** frontend + bridge
+
+**Symptom.** During long-running OpenClaw turns (web searches, multi-tool
+sequences, big file reads), the yellow `Reconnecting to server…` banner
+appears mid-stream. The turn continues in the background and the banner
+clears on its own once events start flowing again, but it reads like a
+failure to the user.
+
+**Root cause (understood, not yet mitigated).** The frontend's SSE client
+in `frontend/src/lib/sse.ts` treats silence as failure:
+
+1. **Heartbeat timeout** — if no SSE event (not even a `heartbeat`) arrives
+   within `SSE_HEARTBEAT_TIMEOUT`, the client closes the EventSource and
+   calls `scheduleReconnect()`, which flips the connection store status
+   to `"reconnecting"` (`sse.ts:339`).
+2. **Stale-connection watchdog** — a 15 s poll compares `lastEventTime`
+   against the heartbeat threshold and force-reconnects if the timer
+   missed (handles suspended laptops, frozen network stack).
+3. **Native EventSource close** — browser reports `readyState === CLOSED`,
+   which also triggers `scheduleReconnect()`.
+
+The bridge emits `event: heartbeat` every 15 s when idle
+(`bridge/streaming.py::stream_openclaw_to_sse`), so normally the client
+stays connected. Two plausible ways it still fires:
+
+- **Proxy buffering.** The Next.js dev rewrite (`frontend/next.config.ts`)
+  may buffer SSE output under Turbopack, delaying heartbeats past the
+  client threshold.
+- **Long-running single tool call.** If OpenClaw stalls inside a tool
+  (e.g. 60 s web scrape) without emitting any OpenAI-chunk data, the
+  bridge's 15 s heartbeat loop keeps going — but if `lastEventTime` on
+  the client reflects the last real `text-delta`, the watchdog can still
+  trip.
+
+**Candidate fixes.**
+
+1. Audit the client heartbeat accounting — confirm `event: heartbeat`
+   resets `lastEventTime`, not just `text-delta` events. If it doesn't,
+   this is a one-line fix.
+2. Lower the bridge-side heartbeat interval below 15 s (e.g. 10 s) so
+   two heartbeats fit inside a single client heartbeat window.
+3. Add a `X-Accel-Buffering: no` equivalent to the Next.js rewrite, or
+   bypass the proxy for SSE in web mode (currently commented against in
+   `src/lib/constants.ts` for port-forwarding reasons — would need a
+   different solution).
+
+**Where to look later.** `frontend/src/lib/sse.ts` (client reconnect
+logic + heartbeat accounting), `bridge/streaming.py`
+(`stream_openclaw_to_sse` + `emit_prefetched_sse` heartbeat emission),
+`frontend/next.config.ts` (rewrite config for `/api/chat/stream/*`).
+
+---
+
+## 2026-04-16 — First message of a new session is not truly streamed
+
+**Area:** bridge
+
+**Symptom.** When a user sends the first message of a new chat session,
+they see no incremental output — just a long pause followed by the whole
+response appearing in a fast simulated "stream". Subsequent messages in
+the same session stream token-by-token as expected. Folder/workspace
+selection has no effect; the branch is purely new-session vs
+existing-session.
+
+**Root cause (intentional workaround).**
+`bridge/streaming.py::create_new_session` calls OpenClaw with
+`"stream": False`, waits for the full response, then `emit_prefetched_sse`
+slices the result into 4-character chunks and emits them as SSE
+`text-delta` events to simulate streaming. The comment in
+`routes/chat.py::chat_prompt` spells out the reason:
+`# Uses stream=False to avoid OpenClaw's bootstrap-duplicate issue.`
+
+When a brand-new session is being bootstrapped, OpenClaw re-appends the
+user message after loading context. Under real streaming this caused the
+response to appear duplicated; the workaround was to fall back to a
+non-streaming first call.
+
+**Candidate fixes.**
+
+1. Solve the upstream bootstrap-duplicate behavior in OpenClaw so the
+   first call can use `stream=True`. Then flip the flag and delete
+   `emit_prefetched_sse` entirely.
+2. Keep streaming but dedupe on the bridge side — detect and drop the
+   duplicated user echo in the stream before forwarding to the client.
+   Complexity: non-trivial; needs to know exactly what OpenClaw re-emits.
+3. Live with the current behavior but improve the UX hint — show a
+   spinner with a message like "Starting session…" during the wait so
+   the user knows something is happening.
+
+**Where to look later.** `bridge/streaming.py::create_new_session`,
+`bridge/streaming.py::emit_prefetched_sse`, `bridge/routes/chat.py`
+(the `if not session_id:` branch in `chat_prompt`).
