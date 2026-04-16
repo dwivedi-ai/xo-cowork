@@ -24,7 +24,7 @@ export interface PromptRequest {
 
 export interface PromptResponse {
   stream_id: string;
-  session_id: string;
+  session_id: string | null;
 }
 
 export interface EditAndResendRequest {

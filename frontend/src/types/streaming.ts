@@ -18,6 +18,7 @@ export const SSE_EVENTS = {
   RETRY: "retry",
   DESYNC: "desync",
   DONE: "done",
+  SESSION_CREATED: "session-created",
   AGENT_ERROR: "agent-error",
   ERROR: "error",
   COMPACTION_ERROR: "compaction-error",
