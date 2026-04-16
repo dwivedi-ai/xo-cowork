@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SSEClient } from "@/lib/sse";
@@ -17,6 +18,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { proxyApi } from "@/lib/proxy-api";
 import { api } from "@/lib/api";
 import { isPreviewableFile, artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
+import { getChatRoute } from "@/lib/routes";
 import type { SessionResponse } from "@/types/session";
 import type { ArtifactType } from "@/types/artifact";
 
@@ -96,6 +98,8 @@ class ProgressiveBuffer {
 export function useSSE(streamId: string | null) {
   const clientRef = useRef<SSEClient | null>(null);
   const reasoningBufferRef = useRef<ProgressiveBuffer | null>(null);
+  const routerRef = useRef<ReturnType<typeof useRouter>>(null!);
+  routerRef.current = useRouter();
   const queryClient = useQueryClient();
   const store = useChatStore;
   const connectionStore = useConnectionStore;
@@ -158,6 +162,13 @@ export function useSSE(streamId: string | null) {
                   );
                 }
               } finally {
+                const isNewSession = sessionId && sessionId !== "pending" && window.location.pathname.endsWith("/new");
+                if (isNewSession) {
+                  routerRef.current.replace(getChatRoute(sessionId));
+                  await new Promise<void>((r) =>
+                    requestAnimationFrame(() => requestAnimationFrame(() => r())),
+                  );
+                }
                 store.getState().finishGeneration();
                 connectionStore.getState().setStatus("idle");
               }
@@ -170,6 +181,48 @@ export function useSSE(streamId: string | null) {
     client.on(SSE_EVENTS.MODEL_LOADING, (_data, id) => {
       persistedLastEventId = id;
       store.getState().setModelLoading(true);
+    });
+
+    // Session created — new session's real ID resolved by the bridge.
+    // Update store and sidebar. Navigation happens in the DONE handler.
+    client.on(SSE_EVENTS.SESSION_CREATED, (data, id) => {
+      persistedLastEventId = id;
+      if (data.session_id) {
+        // Update session ID in the chat store
+        useChatStore.setState({ sessionId: data.session_id });
+
+        // Add temp session to sidebar
+        const tempSession: SessionResponse = {
+          id: data.session_id,
+          project_id: null,
+          parent_id: null,
+          slug: null,
+          agent: null,
+          directory: useSettingsStore.getState().workspaceDirectory ?? "/home/coder/.openclaw/workspace",
+          title: store.getState().pendingUserText?.slice(0, 60) ?? "New conversation",
+          version: 0,
+          summary_additions: 0,
+          summary_deletions: 0,
+          summary_files: 0,
+          summary_diffs: [],
+          is_pinned: false,
+          permission: {},
+          time_created: new Date().toISOString(),
+          time_updated: new Date().toISOString(),
+          time_compacting: null,
+          time_archived: null,
+        };
+        queryClient.setQueryData<InfiniteData<SessionResponse[]>>(
+          queryKeys.sessions.all,
+          (old) => {
+            if (!old) return { pages: [[tempSession]], pageParams: [0] };
+            return {
+              ...old,
+              pages: [[tempSession, ...old.pages[0]], ...old.pages.slice(1)],
+            };
+          },
+        );
+      }
     });
 
     // Text streaming
@@ -520,7 +573,13 @@ export function useSSE(streamId: string | null) {
         stepFinishTimer = null;
       }
       reasoningBuffer.flush();
-      const sessionId = store.getState().sessionId;
+      let sessionId = store.getState().sessionId;
+
+      // Fallback: if session-created event was missed, use done event's session_id
+      if ((!sessionId || sessionId === "pending") && _data.session_id) {
+        sessionId = _data.session_id;
+        useChatStore.setState({ sessionId });
+      }
 
       // Wait for DB messages to load BEFORE clearing streaming state.
       // Otherwise StreamingMessage unmounts (isGenerating=false) before
@@ -538,9 +597,21 @@ export function useSSE(streamId: string | null) {
           );
         }
       } finally {
+        // Navigate BEFORE finishGeneration to avoid a flash of the "new session"
+        // form on Landing. ChatView mounts with isGenerating still true, then
+        // finishGeneration transitions it to show DB-fetched messages.
+        const isNewSession = sessionId && sessionId !== "pending" && window.location.pathname.endsWith("/new");
+        if (isNewSession) {
+          routerRef.current.replace(getChatRoute(sessionId));
+          // Wait for navigation to render before clearing streaming state
+          await new Promise<void>((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r())),
+          );
+        }
         store.getState().finishGeneration();
         connectionStore.getState().setStatus("idle");
       }
+
       // Delayed verification refetch — catches any React rendering race condition
       // where the first refetch (before finishGeneration) returned stale data.
       // By the time the streaming fallback expires (800ms), this refetch will have
@@ -609,6 +680,13 @@ export function useSSE(streamId: string | null) {
           );
         }
       } finally {
+        const isNewSession = sessionId && sessionId !== "pending" && window.location.pathname.endsWith("/new");
+        if (isNewSession) {
+          routerRef.current.replace(getChatRoute(sessionId));
+          await new Promise<void>((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r())),
+          );
+        }
         store.getState().finishGeneration();
         connectionStore.getState().setStatus("idle");
       }

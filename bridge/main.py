@@ -6,6 +6,7 @@ and serves it in the format OpenYak's frontend expects.
 Proxies chat messages to OpenClaw's OpenAI-compatible API with SSE translation.
 """
 
+import asyncio
 import json
 import os
 import re
@@ -411,9 +412,20 @@ def update_session_directory(session_id: str, directory: str) -> bool:
     return False
 
 
+def _normalize_content(msg: dict) -> str:
+    """Extract text from a message's content for deduplication comparison."""
+    content = msg.get("content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content if b.get("type") == "text")
+    return ""
+
+
 def convert_messages(session_id: str, records: list[dict]) -> list[dict]:
     """Convert OpenClaw JSONL message records to OpenYak MessageResponse format."""
     messages = []
+    last_user_content: str | None = None
 
     for record in records:
         if record.get("type") != "message":
@@ -429,6 +441,13 @@ def convert_messages(session_id: str, records: list[dict]) -> list[dict]:
             continue
 
         if role == "user":
+            # Deduplicate consecutive user messages with identical content
+            # (OpenClaw's bootstrap re-appends the user message after context loading)
+            content_text = _normalize_content(msg)
+            if content_text and content_text == last_user_content:
+                continue
+            last_user_content = content_text
+
             parts = _convert_user_parts(record_id, session_id, timestamp, msg)
             messages.append({
                 "id": record_id,
@@ -593,7 +612,7 @@ async def stream_openclaw_to_sse(stream_id: str):
     event_id = 0
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=10.0)) as client:
             async with client.stream(
                 "POST",
                 OPENCLAW_API_URL,
@@ -614,7 +633,16 @@ async def stream_openclaw_to_sse(stream_id: str):
                     yield f"id: {event_id}\nevent: agent-error\ndata: {json.dumps({'error_message': f'OpenClaw API error: {response.status_code} {body.decode()}'})}\n\n"
                     return
 
-                async for line in response.aiter_lines():
+                line_iter = response.aiter_lines().__aiter__()
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iter.__anext__(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield "event: heartbeat\ndata: {}\n\n"
+                        continue
+                    except StopAsyncIteration:
+                        break
+
                     if not line.startswith("data: "):
                         continue
 
@@ -743,15 +771,13 @@ def openclaw_agent_id_from_prompt_body(body: dict) -> str:
     return "main"
 
 
-async def create_new_session(text: str, agent_name: str = "main") -> tuple[str, str, str]:
+async def create_new_session(text: str, session_key: str) -> tuple[str, str, str]:
     """
     Create a new OpenClaw session by sending the first message.
     Makes a non-streaming call to establish the session, then returns
     (session_key, session_id, response_text).
     """
-    session_key = f"agent:{agent_name}:web:{uuid.uuid4().hex[:8]}"
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=10.0)) as client:
         response = await client.post(
             OPENCLAW_API_URL,
             headers={
@@ -786,17 +812,42 @@ async def create_new_session(text: str, agent_name: str = "main") -> tuple[str, 
 
 
 async def emit_prefetched_sse(stream_id: str):
-    """Emit a pre-fetched response as SSE events (for new sessions)."""
-    stream_info = active_streams.pop(stream_id, None)
-    if not stream_info:
+    """
+    Await the background create_new_session task, emitting keepalives every
+    15 s while waiting. Once complete, emit session-created + response text
+    as SSE events.
+
+    The asyncio.Task can be awaited multiple times (returns cached result),
+    so React Strict Mode double-mounts are safe.
+    """
+    stream_info = active_streams.get(stream_id)
+    if not stream_info or not stream_info.get("prefetched"):
         yield f"id: 1\nevent: error\ndata: {json.dumps({'error_message': 'Stream not found'})}\n\n"
         return
 
-    session_id = stream_info["session_id"]
-    response_text = stream_info["response_text"]
-
-    # Emit in chunks to simulate streaming
+    task: asyncio.Task = stream_info["task"]
     event_id = 0
+
+    # Wait for the task, emitting keepalives every 15s
+    while not task.done():
+        done, _ = await asyncio.wait({task}, timeout=15.0)
+        if not done:
+            yield "event: heartbeat\ndata: {}\n\n"
+
+    # Task finished — check result
+    try:
+        _session_key, session_id, response_text = task.result()
+    except Exception as e:
+        event_id += 1
+        yield f"id: {event_id}\nevent: agent-error\ndata: {json.dumps({'error_message': str(e)})}\n\n"
+        active_streams.pop(stream_id, None)
+        return
+
+    # Emit session-created so the frontend can navigate
+    event_id += 1
+    yield f"id: {event_id}\nevent: session-created\ndata: {json.dumps({'session_id': session_id})}\n\n"
+
+    # Emit response in chunks to simulate streaming
     chunk_size = 4
     for i in range(0, len(response_text), chunk_size):
         chunk = response_text[i : i + chunk_size]
@@ -805,6 +856,7 @@ async def emit_prefetched_sse(stream_id: str):
 
     event_id += 1
     yield f"id: {event_id}\nevent: done\ndata: {json.dumps({'finish_reason': 'stop', 'session_id': session_id})}\n\n"
+    active_streams.pop(stream_id, None)
 
 
 @app.post("/api/chat/prompt")
@@ -816,18 +868,26 @@ async def chat_prompt(request: Request):
     if not text:
         return JSONResponse(status_code=400, content={"detail": "Empty message"})
 
-    # New session: create via OpenClaw, get the response immediately
+    # New session: kick off create_new_session as a background task.
+    # Poll for the session_id (OpenClaw creates it quickly) so the frontend
+    # can navigate to /c/{session_id} immediately.
+    # Uses stream=False to avoid OpenClaw's bootstrap-duplicate issue.
     if not session_id:
-        try:
-            oc_agent = openclaw_agent_id_from_prompt_body(body)
-            session_key, new_session_id, response_text = await create_new_session(text, agent_name=oc_agent)
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"detail": str(e)})
+        oc_agent = openclaw_agent_id_from_prompt_body(body)
+        session_key = f"agent:{oc_agent}:web:{uuid.uuid4().hex[:8]}"
+        task = asyncio.create_task(create_new_session(text, session_key=session_key))
+
+        # Poll for session_id — OpenClaw writes it to sessions.json quickly
+        new_session_id = None
+        for _ in range(20):
+            await asyncio.sleep(1.0)
+            new_session_id = find_session_id_by_key(session_key)
+            if new_session_id:
+                break
 
         stream_id = str(uuid.uuid4())
         active_streams[stream_id] = {
-            "session_id": new_session_id,
-            "response_text": response_text,
+            "task": task,
             "prefetched": True,
         }
         return {"stream_id": stream_id, "session_id": new_session_id}
@@ -850,7 +910,11 @@ async def chat_prompt(request: Request):
 @app.get("/api/chat/stream/{stream_id}")
 async def chat_stream(stream_id: str):
     stream_info = active_streams.get(stream_id)
-    if stream_info and stream_info.get("prefetched"):
+    if not stream_info:
+        async def not_found():
+            yield f"id: 1\nevent: error\ndata: {json.dumps({'error_message': 'Stream not found'})}\n\n"
+        generator = not_found()
+    elif stream_info.get("prefetched"):
         generator = emit_prefetched_sse(stream_id)
     else:
         generator = stream_openclaw_to_sse(stream_id)

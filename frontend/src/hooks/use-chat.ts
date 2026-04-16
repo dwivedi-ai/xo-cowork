@@ -93,7 +93,7 @@ export function useChat(currentSessionId?: string) {
           workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
         });
 
-        chatState.startGeneration(res.stream_id, res.session_id);
+        chatState.startGeneration(res.stream_id, res.session_id ?? "pending");
 
         // Don't refetch messages here — the optimistic pendingUserText bubble
         // stays visible during streaming. A mid-stream refetch can return
@@ -101,7 +101,9 @@ export function useChat(currentSessionId?: string) {
         // Messages are refetched after DONE in the SSE handler.
 
         // Navigate to session if this was a new conversation
-        if (!currentSessionId) {
+        // For new sessions where session_id is null (streaming creation),
+        // navigation is deferred until session-created SSE event arrives.
+        if (!currentSessionId && res.session_id) {
           // Optimistically add the session to the sidebar with user text as temp title
           const tempSession: SessionResponse = {
             id: res.session_id,
@@ -238,7 +240,7 @@ export function useChat(currentSessionId?: string) {
           workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
         });
 
-        chatState.startGeneration(res.stream_id, res.session_id);
+        chatState.startGeneration(res.stream_id, res.session_id!);
 
         // Reset workspace sidebar — old progress/files are stale after resend
         useWorkspaceStore.getState().setTodos([]);
