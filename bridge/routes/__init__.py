@@ -12,6 +12,7 @@ here is purely cosmetic.
 from fastapi import APIRouter
 
 from .agents import router as agents_router
+from .channels import router as channels_router
 from .chat import router as chat_router
 from .config_routes import router as config_router
 from .files import router as files_router
@@ -29,6 +30,7 @@ all_routers: list[APIRouter] = [
     chat_router,
     agents_router,
     config_router,
+    channels_router,
     files_router,
     workspace_memory_router,
     secrets_router,

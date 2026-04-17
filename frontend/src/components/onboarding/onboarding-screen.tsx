@@ -20,12 +20,13 @@ import {
   Zap,
   AlertCircle,
   RefreshCw,
+  Info,
 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSettingsStore } from "@/stores/settings-store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { API, IS_DESKTOP, XO_COWORK_API_BASE, queryKeys } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
 import {
@@ -296,12 +297,23 @@ function ProviderOption({
   );
 }
 
+function GatewayRestartNotice() {
+  return (
+    <div className="mt-2 flex items-start gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] px-2.5 py-2">
+      <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
+      <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
+        Restart the Gateway from{" "}
+        <span className="font-medium text-[var(--text-primary)]">Settings → Channels</span>{" "}
+        to apply these changes.
+      </p>
+    </div>
+  );
+}
+
 function ModelsStep({
   onNext,
-  onSkip,
 }: {
   onNext: () => void;
-  onSkip: () => void;
 }) {
   const qc = useQueryClient();
   const { setActiveProvider } = useSettingsStore();
@@ -557,6 +569,7 @@ const saveEnvVar = async () => {
           >
             {anthropicSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : anthropicSaved ? "Saved" : "Save Key"}
           </Button>
+          {anthropicSaved && <GatewayRestartNotice />}
         </ProviderOption>
 
         {/* OpenAI */}
@@ -611,6 +624,7 @@ const saveEnvVar = async () => {
               >
                 {openaiSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : openaiSaved ? "Saved" : "Save Key"}
               </Button>
+              {openaiSaved && <GatewayRestartNotice />}
             </>
           ) : (
             <>
@@ -780,12 +794,6 @@ const saveEnvVar = async () => {
         Continue
         <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
-      <button
-        onClick={onSkip}
-        className="mt-3 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-      >
-        Skip for now
-      </button>
     </div>
   );
 }
@@ -814,7 +822,16 @@ function ChannelRow({ platform, isExpanded, isConnected, onToggle, onConnect }: 
     try {
       await onConnect({ platform: platform.id, ...fields });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Connection failed");
+      // Surface the bridge's `detail` field when present — generic
+      // "API 502: Bad Gateway" tells the user nothing actionable.
+      if (e instanceof ApiError) {
+        const body = e.body as { detail?: string } | undefined;
+        setError(body?.detail || e.message);
+      } else if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Connection failed");
+      }
     } finally {
       setSaving(false);
     }
@@ -840,7 +857,7 @@ function ChannelRow({ platform, isExpanded, isConnected, onToggle, onConnect }: 
         </span>
         {isConnected ? (
           <span className="flex items-center gap-1 text-xs text-[var(--color-success)]">
-            <Check className="h-3.5 w-3.5" /> Connected
+            <Check className="h-3.5 w-3.5" /> Saved
           </span>
         ) : (
           <ChevronRight
@@ -944,10 +961,17 @@ function ChannelsStep({
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [connected, setConnected] = useState<Set<string>>(new Set());
+  const [needsRestart, setNeedsRestart] = useState(false);
 
   const handleConnect = async (platformId: string, fields: Record<string, string>) => {
-    await api.post(API.CHANNELS.ADD, fields);
+    const resp = await api.post<{
+      ok: boolean;
+      config_updated: boolean;
+      restart_required: boolean;
+      detail?: string;
+    }>(API.CHANNELS.ADD, fields);
     setConnected((prev) => new Set(prev).add(platformId));
+    if (resp.restart_required) setNeedsRestart(true);
     setExpanded(null);
   };
 
@@ -975,16 +999,10 @@ function ChannelsStep({
         ))}
       </div>
 
+      {needsRestart && <GatewayRestartNotice />}
+
       <Button className="w-full mt-5" onClick={onNext}>
-        {connected.size > 0 ? (
-          <>
-            Continue <ArrowRight className="ml-2 h-4 w-4" />
-          </>
-        ) : (
-          <>
-            Continue <ArrowRight className="ml-2 h-4 w-4" />
-          </>
-        )}
+        Continue <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
       <button
         onClick={onSkip}
@@ -1218,7 +1236,7 @@ export function OnboardingScreen() {
               exit="exit"
               transition={transition}
             >
-              <ModelsStep onNext={goNext} onSkip={goNext} />
+              <ModelsStep onNext={goNext} />
             </motion.div>
           )}
 
