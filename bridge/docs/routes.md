@@ -20,6 +20,7 @@ bridge/
 ├── config.py                # env vars, paths, constants, shared state
 ├── helpers.py               # time/id utils, masking, safe readers
 ├── openclaw_store.py        # openclaw.json + agent entries + disk seeding
+├── openclaw_env.py          # ~/.openclaw/.env parser + upsert helpers
 ├── sessions_io.py           # session JSONL discovery & directory updates
 ├── messages.py              # OpenClaw record → xo-cowork MessageResponse
 ├── streaming.py             # SSE stream + new-session bootstrap
@@ -30,6 +31,7 @@ bridge/
     ├── chat.py
     ├── agents.py
     ├── config_routes.py
+    ├── channels.py
     ├── files.py
     ├── workspace_memory.py
     ├── secrets.py
@@ -151,6 +153,17 @@ Named `config_routes.py` (not `config.py`) to avoid shadowing the top-level
 | `ollama_config` | `GET /api/config/ollama` | Stub reporting `{"installed": false}`. |
 | `local_provider` | `GET /api/config/local` | Stub reporting `{"available": false}`. |
 | `get_openclaw_config` | `GET /api/config/openclaw` | Returns the full `openclaw.json` with sensitive fields masked by `helpers._mask_sensitive`. 404s if the file is missing. |
+| `save_provider_key` | `POST /api/config/providers/{provider_id}/key` | Onboarding "Save Key" target. Looks up `provider_id` in `PROVIDER_PROVISIONING` (currently `anthropic`, `openai`), upserts the provider's env var into `~/.openclaw/.env` via `openclaw_env.upsert_env_entry`, and spawns `_run_provider_provisioning` as a background task. Returns `{"ok": true, "provisioning": "started"}` as soon as the `.env` write completes. The CLI chain (`openclaw models set …`, `openclaw config set …`) runs asynchronously; its stdout/stderr is appended to `~/.openclaw/bridge-provisioning.log` and the chain aborts on the first non-zero exit. Unknown providers → 400. |
+
+---
+
+## `routes/channels.py`
+
+Channel provisioning writes. `GET /api/channels` and `GET /api/channels/openclaw/status` still live in `routes/misc.py`; this file owns the write path introduced by the onboarding Channels step.
+
+| Function | Method + path | Purpose |
+| --- | --- | --- |
+| `add_channel` | `POST /api/channels/add` | Onboarding Channels step target. Body is `{platform, …tokens}`. Looks up `platform` in `CHANNEL_PROVISIONING` (`slack`, `telegram`, `discord`), upserts each required token into `~/.openclaw/.env` via `openclaw_env.upsert_env_entry`, then — if the platform has either a `config_batch` or any `post_commands` — spawns `_run_provisioning_bg` as a **background task** and returns `{ok: true, restart_required: true, provisioning: "started"}` immediately. The CLI chain (`openclaw config set --batch-json <recipe>` followed by each `post_commands` argv, e.g. `openclaw config set plugins.entries.slack.enabled true`) runs asynchronously with a 30 s per-step timeout and aborts on the first non-zero exit so a failed batch doesn't leave plugins half-enabled. Tokens are always referenced by env-var name in the batch (`"ref": {"id": "SLACK_BOT_TOKEN"}`) — their values never enter argv. Stdout/stderr for every step lands in `~/.openclaw/bridge-provisioning.log`. Platforms with no CLI chain (currently Discord) short-circuit after the `.env` write and return `restart_required: false, provisioning: "skipped"`. The handler only returns non-200 for shape errors (400 unknown/missing platform, 400 missing token, 500 failed `.env` write) — CLI failures are only visible in the log, mirroring the provider-key flow in `config_routes.py`. |
 
 ---
 
@@ -272,6 +285,7 @@ tour so you know where the building blocks live:
 | `config.py` | `CORS_ORIGINS`, OpenClaw path/env constants, agent-id regexes, workspace-doc filename tuples, `OPENCLAW_MODEL_CAPABILITIES`, `active_streams` shared dict. |
 | `helpers.py` | `ms_to_iso`, `iso_now`, `short_id`, `normalize_agent_id`, `parse_jsonl`, `derive_title`, `_path_must_be_under_home`, bounded-text/json file readers, secret redaction/masking utilities. |
 | `openclaw_store.py` | `openclaw.json` load/write, `agents.list` traversal, `resolve_agent_workspace_dir`, `apply_agent_list_entry`, `seed_agent_workspace`, `ensure_openclaw_agent_disk`. |
+| `openclaw_env.py` | `~/.openclaw/.env` parser/serializer, `load_env_entries`, `save_env_entries`, `upsert_env_entry` — shared by `routes/secrets.py` (whole-file read/write) and `routes/config_routes.py` (single-key upsert for provider onboarding). |
 | `sessions_io.py` | `load_all_sessions`, `find_session_file`, `find_session_key`, `update_session_directory`. |
 | `messages.py` | `convert_messages` and private converters for user / assistant / tool-result / stop-reason translation. |
 | `streaming.py` | `stream_openclaw_to_sse`, `emit_prefetched_sse`, `create_new_session`, `find_session_id_by_key`, `openclaw_agent_id_from_prompt_body`. |
