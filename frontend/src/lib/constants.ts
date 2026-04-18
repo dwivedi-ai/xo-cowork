@@ -170,6 +170,7 @@ export const API = {
     SEARCH: "/api/files/search",
     INGEST: "/api/files/ingest",
     MKDIR: "/api/files/mkdir",
+    SAVE: "/api/files/save",
   },
   ARTIFACTS: {
     EXPORT_PDF: "/api/artifacts/export-pdf",
