@@ -185,6 +185,7 @@ are clamped to `$HOME` — any path resolving outside returns `403`.
 | `list_directory` | `POST /api/files/list-directory` | Lists a directory; dirs sort first, then files. Hides permission errors. Returns `path`, `parent`, `dirs`, `files`. |
 | `file_content` | `POST /api/files/content` | Reads a text file with `errors="replace"`. |
 | `file_content_binary` | `POST /api/files/content-binary` | Returns a `FileResponse` so the browser can download the file. |
+| `file_save` | `POST /api/files/save` | Writes UTF-8 text content to a file under `$HOME`. Body `{path, content}`. Creates parent directories if missing. Used by the onboarding Personality step to persist the agent's `IDENTITY.md` / `SOUL.md` / `AGENTS.md` / `USER.md`. 400 on missing or non-string fields, 403 if the path escapes `$HOME`. |
 | `make_directory` | `POST /api/files/mkdir` | Creates a new directory. Optional `scaffold` writes the xo-cowork workspace files; optional `files` copies existing files (validated for existence and home-scope) into the new directory. Returns the created path and the list of copied filenames. |
 
 ---

@@ -12,6 +12,7 @@ import {
   Cpu,
   Radio,
   FolderKanban,
+  Sparkles,
   ChevronRight,
   Eye,
   EyeOff,
@@ -36,6 +37,8 @@ import {
   SlackIcon,
 } from "@/components/icons/platform-icons";
 import { toast } from "sonner";
+import { PersonalityStep } from "./personality-step";
+import type { PersonalityContent } from "@/hooks/use-personality-files";
 
 const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
 
@@ -55,9 +58,9 @@ const transition = { duration: 0.28, ease: [0.25, 0.1, 0.25, 1] as const };
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-type Step = "company" | "models" | "channels" | "project";
+type Step = "company" | "models" | "channels" | "personality" | "project";
 
-const STEPS: Step[] = ["company", "models", "channels", "project"];
+const STEPS: Step[] = ["company", "models", "channels", "personality", "project"];
 
 const STEP_META: Record<Step, { icon: React.ReactNode; label: string; description: string }> = {
   company: {
@@ -74,6 +77,11 @@ const STEP_META: Record<Step, { icon: React.ReactNode; label: string; descriptio
     icon: <Radio className="h-5 w-5" />,
     label: "Channels",
     description: "Link messaging apps",
+  },
+  personality: {
+    icon: <Sparkles className="h-5 w-5" />,
+    label: "Personality",
+    description: "Shape your agent",
   },
   project: {
     icon: <FolderKanban className="h-5 w-5" />,
@@ -102,6 +110,7 @@ interface Platform {
   help: string;
   helpUrl?: string;
   fields?: PlatformField[];
+  hidden?: boolean;
 }
 
 const PLATFORMS: Platform[] = [
@@ -112,6 +121,7 @@ const PLATFORMS: Platform[] = [
     color: "text-[#25D366]",
     auth: "qr",
     help: "Scan QR with your phone to link WhatsApp",
+    hidden: true,
   },
   {
     id: "discord",
@@ -985,7 +995,7 @@ function ChannelsStep({
       </p>
 
       <div className="space-y-2">
-        {PLATFORMS.map((platform) => (
+        {PLATFORMS.filter((p) => !p.hidden).map((platform) => (
           <ChannelRow
             key={platform.id}
             platform={platform}
@@ -1152,6 +1162,8 @@ export function OnboardingScreen() {
   const [step, setStep] = useState<Step>("company");
   const [direction, setDirection] = useState(1);
   const [companyNameInput, setCompanyNameInput] = useState("");
+  const [personalityContent, setPersonalityContent] =
+    useState<PersonalityContent | null>(null);
 
   const goTo = (next: Step, dir = 1) => {
     setDirection(dir);
@@ -1189,7 +1201,9 @@ export function OnboardingScreen() {
       </div>
 
       <motion.div
-        className="w-full max-w-sm px-6"
+        className={`w-full px-6 transition-[max-width] duration-300 ease-out ${
+          step === "personality" ? "max-w-lg" : "max-w-sm"
+        }`}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
@@ -1251,6 +1265,25 @@ export function OnboardingScreen() {
               transition={transition}
             >
               <ChannelsStep onNext={goNext} onSkip={goNext} />
+            </motion.div>
+          )}
+
+          {step === "personality" && (
+            <motion.div
+              key="personality"
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={transition}
+            >
+              <PersonalityStep
+                content={personalityContent}
+                onInitialLoad={setPersonalityContent}
+                onChange={setPersonalityContent}
+                onNext={goNext}
+              />
             </motion.div>
           )}
 

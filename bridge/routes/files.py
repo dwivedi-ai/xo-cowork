@@ -273,6 +273,45 @@ async def file_content_binary(request: Request):
     return FileResponse(str(target), filename=target.name)
 
 
+@router.post("/api/files/save")
+async def file_save(request: Request):
+    """Write text content to a file under the user's home directory.
+
+    Body fields:
+    - ``path`` (str, required): absolute path of the file to write.
+    - ``content`` (str, required): UTF-8 text content.
+
+    Creates parent directories if missing. Intended for known workspace
+    files (e.g. `IDENTITY.md`, `SOUL.md`, etc.) — for generic uploads,
+    use `/api/files/upload` instead.
+    """
+    body = await request.json()
+    raw_path = body.get("path")
+    content = body.get("content")
+
+    if not raw_path:
+        return JSONResponse(status_code=400, content={"detail": "Missing path"})
+    if content is None:
+        return JSONResponse(status_code=400, content={"detail": "Missing content"})
+    if not isinstance(content, str):
+        return JSONResponse(status_code=400, content={"detail": "Content must be a string"})
+
+    base = Path.home()
+    target = Path(raw_path).resolve()
+
+    if not str(target).startswith(str(base)):
+        return JSONResponse(status_code=403, content={"detail": "Access denied"})
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = content.encode("utf-8")
+        target.write_bytes(data)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return {"path": str(target), "bytes": len(data)}
+
+
 @router.post("/api/files/mkdir")
 async def make_directory(request: Request):
     """Create a new directory under the user's home directory.
