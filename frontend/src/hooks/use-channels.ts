@@ -44,11 +44,20 @@ export function useOpenClawStop() {
   });
 }
 
+export interface AddChannelResult {
+  ok: boolean;
+  platform?: string;
+  restart_required?: boolean;
+  provisioning?: "started" | "skipped";
+  detail?: string;
+  message?: string;
+}
+
 export function useAddChannel() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: Record<string, string>) =>
-      api.post<{ ok: boolean; message: string }>(API.CHANNELS.ADD, body),
+      api.post<AddChannelResult>(API.CHANNELS.ADD, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.channels });
     },

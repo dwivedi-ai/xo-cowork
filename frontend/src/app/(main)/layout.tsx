@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
@@ -205,7 +205,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       {showSplash && <SplashScreen />}
 
       {/* Redirect first-time users to /onboard — no render */}
-      <OnboardingGate />
+      <Suspense fallback={null}>
+        <OnboardingGate />
+      </Suspense>
 
       {/* Top progress bar for route transitions */}
       <RouteProgressBar />
@@ -215,7 +217,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
-        <Sidebar />
+        <Suspense fallback={null}>
+          <Sidebar />
+        </Suspense>
       </div>
 
       {/* Mobile nav drawer */}
@@ -281,7 +285,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       >
         <ConnectionStatus />
         <UpdateBanner />
-        {children}
+        <Suspense fallback={null}>{children}</Suspense>
       </motion.main>
 
       {/* Workspace panel — only on active chat sessions */}

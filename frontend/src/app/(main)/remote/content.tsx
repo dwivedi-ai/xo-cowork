@@ -60,6 +60,19 @@ function OpenClawSection() {
   const stopClaw = useOpenClawStop();
   const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null);
   const [gatewayRestarting, setGatewayRestarting] = useState(false);
+  const [pendingRestart, setPendingRestart] = useState<Set<string>>(new Set());
+
+  const handleChannelSaved = useCallback((platformId: string, restartRequired: boolean) => {
+    setExpandedPlatform(null);
+    refetchChannels();
+    if (restartRequired) {
+      setPendingRestart((prev) => {
+        const next = new Set(prev);
+        next.add(platformId);
+        return next;
+      });
+    }
+  }, [refetchChannels]);
 
   const restartGateway = useCallback(async () => {
     setGatewayRestarting(true);
@@ -71,7 +84,9 @@ function OpenClawSection() {
       }>(resolveCoworkApiUrl(API.GATEWAY.RESTART));
       if (res.status === "restarted") {
         toast.success(t("gatewayRestarted"));
+        setPendingRestart(new Set());
         refetchClaw();
+        refetchChannels();
       } else {
         const msg = [res.error, res.output].filter(Boolean).join("\n") || t("gatewayRestartFailed");
         toast.error(msg.length > 280 ? `${msg.slice(0, 280)}…` : msg);
@@ -94,7 +109,7 @@ function OpenClawSection() {
     } finally {
       setGatewayRestarting(false);
     }
-  }, [t, refetchClaw]);
+  }, [t, refetchClaw, refetchChannels]);
 
   const installed = clawStatus?.installed ?? false;
   const running = clawStatus?.running ?? false;
@@ -141,10 +156,25 @@ function OpenClawSection() {
         </div>
       </div>
 
+      {/* Restart-needed banner — soft nudge shown right after a save.
+          No action button here on purpose: the gateway header already
+          exposes "Restart gateway", and the copy tells users they can
+          do it later. */}
+      {pendingRestart.size > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-center gap-2">
+          <RefreshCw className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+          <span className="text-[11px] text-[var(--text-primary)]">
+            {t("channelsNeedsRestartBanner", "Channel settings saved. Restart the gateway in a few minutes to apply.")}
+          </span>
+        </div>
+      )}
+
       {/* Platform cards grid */}
       <div className="grid grid-cols-2 gap-2">
         {PLATFORMS.map((p) => {
-          const connected = !!channels[p.id];
+          const reportedConnected = !!channels[p.id];
+          const pending = pendingRestart.has(p.id);
+          const connected = reportedConnected || pending;
           const isExpanded = expandedPlatform === p.id;
           return (
             <div key={p.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${
@@ -155,6 +185,11 @@ function OpenClawSection() {
                   <span className={p.color}>{p.icon}</span>
                   <span className="text-xs font-medium text-[var(--text-primary)]">{p.name}</span>
                   {connected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                  {pending && !reportedConnected && (
+                    <span className="text-[10px] text-emerald-400">
+                      {t("channelKeysSaved", "Keys Saved")}
+                    </span>
+                  )}
                 </div>
                 {!connected ? (
                   <Button variant="outline" size="sm" className="h-6 text-[10px] px-2"
@@ -162,9 +197,9 @@ function OpenClawSection() {
                     onClick={() => setExpandedPlatform(isExpanded ? null : p.id)}>
                     {isExpanded ? t("channelCancel") : t("channelConnect")}
                   </Button>
-                ) : (
+                ) : reportedConnected ? (
                   <RemoveChannelButton channel={p.id} onRemoved={() => refetchChannels()} />
-                )}
+                ) : null}
               </div>
 
               {/* Expanded: setup form (stays visible during login even if gateway restarts) */}
@@ -178,7 +213,7 @@ function OpenClawSection() {
                       setTimeout(() => refetchChannels(), 2000);
                     }} />
                   ) : (
-                    <TokenForm platform={p} onDone={() => { setExpandedPlatform(null); refetchChannels(); }} />
+                    <TokenForm platform={p} onConnected={(restartRequired) => handleChannelSaved(p.id, restartRequired)} />
                   )}
                 </div>
               )}
@@ -197,7 +232,7 @@ function OpenClawSection() {
 }
 
 /** Token-based channel setup form (Discord, Telegram, Slack, Feishu). */
-function TokenForm({ platform, onDone }: { platform: PlatformDef; onDone: () => void }) {
+function TokenForm({ platform, onConnected }: { platform: PlatformDef; onConnected: (restartRequired: boolean) => void }) {
   const { t } = useTranslation("settings");
   const [values, setValues] = useState<Record<string, string>>({});
   const [showSecret, setShowSecret] = useState<Record<string, boolean>>({});
@@ -206,7 +241,7 @@ function TokenForm({ platform, onDone }: { platform: PlatformDef; onDone: () => 
 
   const handleSubmit = async () => {
     setError(null);
-    const body: Record<string, string> = { channel: platform.id };
+    const body: Record<string, string> = { platform: platform.id };
     for (const f of platform.fields || []) {
       if (!values[f.key]?.trim()) {
         setError(t("channelFieldRequired", { field: t(`fieldLabel_${f.key}`, f.label) }));
@@ -217,10 +252,20 @@ function TokenForm({ platform, onDone }: { platform: PlatformDef; onDone: () => 
 
     addChannel.mutate(body, {
       onSuccess: (result) => {
-        if (result.ok) { onDone(); }
-        else { setError(result.message); }
+        if (result.ok) {
+          onConnected(result.restart_required ?? false);
+        } else {
+          setError(result.detail || result.message || t("channelConnectFailed", "Failed to connect channel"));
+        }
       },
-      onError: (e) => setError(String(e)),
+      onError: (e) => {
+        if (e instanceof ApiError) {
+          const body = e.body as { detail?: string } | undefined;
+          setError(body?.detail || e.message);
+        } else {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      },
     });
   };
 
