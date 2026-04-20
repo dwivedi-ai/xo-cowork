@@ -80,9 +80,17 @@ CHANNEL_PROVISIONING: dict[str, dict] = {
         "fields": {
             "token": "DISCORD_BOT_TOKEN",
         },
-        # Batch TBD — token still saved to .env so a future recipe can pick it up.
-        "config_batch": [],
-        "post_commands": [],
+        "config_batch": [
+            {"path": "channels.discord.enabled",     "value": True},
+            {"path": "channels.discord.groupPolicy", "value": "open"},
+            {"path": "channels.discord.streaming",   "value": {"mode": "partial"}},
+            {"path": "channels.discord.dmPolicy",    "value": "open"},
+            {"path": "channels.discord.allowFrom",   "value": ["*"]},
+            {"path": "channels.discord.dm",          "value": {"enabled": True}},
+        ],
+        "post_commands": [
+            ["openclaw", "config", "set", "plugins.entries.discord.enabled", "true"],
+        ],
     },
 }
 
