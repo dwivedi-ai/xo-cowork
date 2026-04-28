@@ -62,8 +62,8 @@ export function useGDriveRemotes() {
 export function useGDriveCreateRemote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      api.post<{ session_id: string; status: string }>(API.GDRIVE.CREATE, { name }),
+    mutationFn: ({ name, force }: { name: string; force?: boolean }) =>
+      api.post<{ session_id: string; status: string }>(API.GDRIVE.CREATE, { name, force }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: gdriveKeys.remotes });
     },

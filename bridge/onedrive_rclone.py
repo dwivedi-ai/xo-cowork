@@ -47,7 +47,11 @@ from gdrive_rclone import (
     ensure_rclone_running,
     rclone_available,
 )
-from rclone_oauth_lock import has_active_oauth, register_sessions
+from rclone_oauth_lock import (
+    cancel_all_active_oauth,
+    has_active_oauth,
+    register_sessions,
+)
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +83,7 @@ class OneDriveSession:
     auth_url: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
+    oauth_started_at: float | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
     verification_input: str | None = None
     needs_manual_code: bool = False
@@ -87,7 +92,7 @@ class OneDriveSession:
 _sessions: dict[str, OneDriveSession] = {}
 
 # Share the OAuth-port lock with gdrive (and any other rclone-OAuth connector).
-register_sessions(lambda: _sessions.values())
+register_sessions(lambda: _sessions.values(), lambda sid: cancel_session(sid))
 
 
 def get_session(session_id: str) -> OneDriveSession | None:
@@ -245,6 +250,7 @@ async def _run_oauth_flow(session: OneDriveSession) -> None:
             return
 
         session.auth_url = auth_url
+        session.oauth_started_at = time.time()
         session.status = "awaiting_oauth"
         log.info("OneDrive %s: auth URL ready: %s", session.session_id, auth_url[:80])
         log.info(
@@ -375,8 +381,10 @@ async def _run_oauth_flow(session: OneDriveSession) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def create_remote_session(name: str) -> OneDriveSession:
+async def create_remote_session(name: str, force: bool = False) -> OneDriveSession:
     _expire_sessions()
+    if force:
+        await cancel_all_active_oauth()
     if has_active_oauth():
         raise RuntimeError("Another connection is being set up. Please finish or cancel it first.")
 

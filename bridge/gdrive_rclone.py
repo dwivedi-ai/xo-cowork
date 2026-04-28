@@ -27,7 +27,11 @@ from typing import Any, Literal
 
 import httpx
 
-from rclone_oauth_lock import has_active_oauth, register_sessions
+from rclone_oauth_lock import (
+    cancel_all_active_oauth,
+    has_active_oauth,
+    register_sessions,
+)
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +85,7 @@ class GDriveSession:
     auth_url: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
+    oauth_started_at: float | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
     # Set by POST /sessions/{id}/submit when user pastes the redirect URL
     verification_input: str | None = None
@@ -93,7 +98,7 @@ _sessions: dict[str, GDriveSession] = {}
 # Register with the cross-connector OAuth lock — onedrive_rclone (or any
 # other rclone-backed connector) shares port 53682, so only ONE OAuth flow
 # can be active at a time across all of them.
-register_sessions(lambda: _sessions.values())
+register_sessions(lambda: _sessions.values(), lambda sid: cancel_session(sid))
 
 
 def get_session(session_id: str) -> GDriveSession | None:
@@ -326,6 +331,7 @@ async def _run_oauth_flow(session: GDriveSession) -> None:
             return
 
         session.auth_url = auth_url
+        session.oauth_started_at = time.time()
         session.status = "awaiting_oauth"
         log.info("GDrive %s: auth URL ready: %s", session.session_id, auth_url[:80])
 
@@ -448,8 +454,10 @@ async def _run_oauth_flow(session: GDriveSession) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def create_remote_session(name: str) -> GDriveSession:
+async def create_remote_session(name: str, force: bool = False) -> GDriveSession:
     _expire_sessions()
+    if force:
+        await cancel_all_active_oauth()
     if has_active_oauth():
         raise RuntimeError("Another connection is being set up. Please finish or cancel it first.")
 

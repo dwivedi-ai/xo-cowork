@@ -64,8 +64,8 @@ export function useOneDriveRemotes() {
 export function useOneDriveCreateRemote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      api.post<{ session_id: string; status: string }>(API.ONEDRIVE.CREATE, { name }),
+    mutationFn: ({ name, force }: { name: string; force?: boolean }) =>
+      api.post<{ session_id: string; status: string }>(API.ONEDRIVE.CREATE, { name, force }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: onedriveKeys.remotes });
     },

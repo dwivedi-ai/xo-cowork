@@ -151,7 +151,7 @@ type FlowState =
   | { phase: "awaiting_oauth"; authUrl: string; sessionId: string; manualCode: boolean }
   | { phase: "waiting_completion"; sessionId: string }
   | { phase: "completed"; remoteName: string }
-  | { phase: "error"; message: string; sessionId?: string };
+  | { phase: "error"; message: string; sessionId?: string; conflict?: boolean };
 
 function AddRemoteFlow({
   existingNames,
@@ -199,16 +199,17 @@ function AddRemoteFlow({
   const nameError = validateName(name);
   const isDuplicate = existingNames.includes(name);
 
-  const handleConnect = async () => {
+  const handleConnect = async (force = false) => {
     if (nameError || !name || isDuplicate) return;
     setFlow({ phase: "starting" });
     try {
-      const res = await createMutation.mutateAsync(name);
+      const res = await createMutation.mutateAsync({ name, force });
       setFlow({ phase: "waiting_completion", sessionId: res.session_id });
     } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
       const msg =
         err instanceof Error ? err.message : "Failed to start connection. Please try again.";
-      setFlow({ phase: "error", message: msg });
+      setFlow({ phase: "error", message: msg, conflict: status === 409 });
     }
   };
 
@@ -224,6 +225,13 @@ function AddRemoteFlow({
   };
 
   const handleRetry = () => {
+    setFlow({ phase: "idle" });
+    setName("");
+    setPastedUrl("");
+  };
+
+  const handleCancel = (sid?: string) => {
+    onCancel(sid);
     setFlow({ phase: "idle" });
     setName("");
     setPastedUrl("");
@@ -255,7 +263,7 @@ function AddRemoteFlow({
         </div>
         <Button
           className="w-full"
-          onClick={handleConnect}
+          onClick={() => handleConnect()}
           disabled={!name || !!nameError || isDuplicate || flow.phase === "starting"}
         >
           {flow.phase === "starting" ? (
@@ -310,7 +318,7 @@ function AddRemoteFlow({
           <Button
             variant="ghost" size="sm"
             className="w-full text-xs text-[var(--text-tertiary)]"
-            onClick={() => onCancel(flow.sessionId)}
+            onClick={() => handleCancel(flow.sessionId)}
           >
             Cancel
           </Button>
@@ -408,7 +416,7 @@ function AddRemoteFlow({
         <Button
           variant="ghost" size="sm"
           className="w-full text-xs text-[var(--text-tertiary)]"
-          onClick={() => onCancel(flow.sessionId)}
+          onClick={() => handleCancel(flow.sessionId)}
         >
           Cancel
         </Button>
@@ -433,12 +441,19 @@ function AddRemoteFlow({
 
   // -- Error --
   if (flow.phase === "error") {
+    const conflict = flow.conflict;
     return (
       <div className="pt-3 border-t border-[var(--border-default)] space-y-3">
         <div className="flex items-start gap-2 rounded-xl border border-[var(--color-destructive)]/30 bg-[var(--color-destructive)]/5 p-3">
           <AlertCircle className="h-4 w-4 text-[var(--color-destructive)] shrink-0 mt-0.5" />
           <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap">{flow.message}</p>
         </div>
+        {conflict && (
+          <Button size="sm" className="w-full text-xs" onClick={() => handleConnect(true)}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            Cancel existing flow & retry
+          </Button>
+        )}
         <Button variant="outline" size="sm" className="w-full text-xs" onClick={handleRetry}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Try again

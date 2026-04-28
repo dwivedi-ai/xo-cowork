@@ -50,6 +50,10 @@ VERCEL_USER_URL = "https://api.vercel.com/v2/user"
 SESSION_TTL = 600   # 10 min
 OAUTH_TIMEOUT = 300  # 5 min
 
+# Fixed callback port so remote dev environments (Coder, Codespaces, etc.)
+# can set up a stable port-forward. Override with VERCEL_CALLBACK_PORT.
+CALLBACK_PORT = int(os.environ.get("VERCEL_CALLBACK_PORT", "53683"))
+
 # ---------------------------------------------------------------------------
 # Token storage (shared with github_connector via mcp-tokens.json)
 # ---------------------------------------------------------------------------
@@ -313,7 +317,7 @@ async def _run_oauth_flow(session: VercelSession) -> None:
         _CallbackHandler.auth_code = None
         _CallbackHandler.error = None
 
-        server = HTTPServer(("127.0.0.1", 0), _CallbackHandler)
+        server = HTTPServer(("127.0.0.1", CALLBACK_PORT), _CallbackHandler)
         port = server.server_address[1]
         redirect_uri = f"http://127.0.0.1:{port}/callback"
 

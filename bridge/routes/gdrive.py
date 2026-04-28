@@ -50,6 +50,7 @@ async def get_gdrive_remotes() -> JSONResponse:
 
 class CreateRemoteBody(BaseModel):
     name: str
+    force: bool = False
 
 
 @router.post("/api/connectors/gdrive/remotes")
@@ -63,7 +64,7 @@ async def create_gdrive_remote(body: CreateRemoteBody) -> JSONResponse:
         raise HTTPException(400, detail=err)
 
     try:
-        session = await create_remote_session(body.name)
+        session = await create_remote_session(body.name, force=body.force)
     except RuntimeError as exc:
         # Concurrent flow
         raise HTTPException(409, detail=str(exc)) from exc
