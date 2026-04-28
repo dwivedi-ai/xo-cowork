@@ -36,6 +36,7 @@ import { api, ApiError } from "@/lib/api";
 import { API } from "@/lib/constants";
 import { getAgentRoute, getChatRoute } from "@/lib/routes";
 import { useArtifactStore } from "@/stores/artifact-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
 import type { SessionResponse } from "@/types/session";
 
@@ -327,39 +328,56 @@ export function AgentsExplorer() {
   const [displayName, setDisplayName] = useState("");
   const [agentIdDraft, setAgentIdDraft] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
+  const storedAgentName = useSettingsStore((s) => s.agentName);
+  const [agentBackend, setAgentBackend] = useState<"openclaw" | "claude_code">(
+    storedAgentName === "claude_code" ? "claude_code" : "openclaw",
+  );
   const { data: agents, isLoading: agentsLoading } = useAgents();
   const { data: sessionPages, isLoading: sessionsLoading } = useSessions();
   const createAgent = useCreateAgent();
   const activeSessionId = useActiveSessionId();
   const router = useRouter();
+  const setWorkspaceDirectory = useSettingsStore((s) => s.setWorkspaceDirectory);
+  const setStoredAgentName = useSettingsStore((s) => s.setAgentName);
 
   const openAddDialog = useCallback(() => {
     setDisplayName("");
     setAgentIdDraft("");
     setAgentDescription("");
+    setAgentBackend(storedAgentName === "claude_code" ? "claude_code" : "openclaw");
     setAddOpen(true);
-  }, []);
+  }, [storedAgentName]);
 
   const handleCreateAgent = useCallback(() => {
     const name = displayName.trim();
     if (!name) return;
+    const id = agentIdDraft.trim() || undefined;
     createAgent.mutate(
       {
         name,
-        ...(agentIdDraft.trim() ? { id: agentIdDraft.trim() } : {}),
+        ...(id ? { id } : {}),
         ...(agentDescription.trim() ? { description: agentDescription.trim() } : {}),
+        backend: agentBackend,
       },
       {
-        onSuccess: () => {
+        onSuccess: (agent) => {
           toast.success(t("agentCreated"));
           setAddOpen(false);
+          // Set the workspace and agent name in settings so new chats use this agent
+          const workspace = agent.metadata?.workspace as string | undefined;
+          if (workspace) setWorkspaceDirectory(workspace);
+          if (agentBackend === "claude_code") {
+            setStoredAgentName("claude_code");
+          } else {
+            setStoredAgentName(null);
+          }
         },
         onError: (err) => {
           toast.error(t("agentCreateFailed"), { description: formatAgentCreateError(err) });
         },
       },
     );
-  }, [agentDescription, agentIdDraft, createAgent, displayName, t]);
+  }, [agentBackend, agentDescription, agentIdDraft, createAgent, displayName, setStoredAgentName, setWorkspaceDirectory, t]);
 
   const sessions = useMemo(() => {
     return sessionPages?.pages.flat() ?? [];
@@ -501,6 +519,28 @@ export function AgentsExplorer() {
                   "placeholder:text-[var(--text-tertiary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] resize-none",
                 )}
               />
+            </div>
+            <div className="grid gap-1.5">
+              <label htmlFor="agent-backend" className="text-xs font-medium text-[var(--text-secondary)]">
+                Backend
+              </label>
+              <select
+                id="agent-backend"
+                value={agentBackend}
+                onChange={(e) => setAgentBackend(e.target.value as "openclaw" | "claude_code")}
+                className={cn(
+                  "flex w-full rounded-[var(--radius)] border border-[var(--border-default)] bg-transparent px-3 py-2 text-sm shadow-[var(--shadow-sm)]",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+                )}
+              >
+                <option value="openclaw">OpenClaw</option>
+                <option value="claude_code">Claude Code</option>
+              </select>
+              <p className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                {agentBackend === "claude_code"
+                  ? "Project stored in ~/claude-cowork/. Uses the Claude CLI directly."
+                  : "Project stored in ~/.openclaw/agents/. Uses the OpenClaw gateway."}
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setAddOpen(false)}>

@@ -169,9 +169,12 @@ export function Landing() {
     );
   }
 
-  // Derive project info from the selected workspace
-  const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
-  const isProjectSelected = globalWorkspace && globalWorkspace !== "." && globalWorkspace.startsWith(WORKSPACE_ROOT + "/");
+  // Derive project info from the selected workspace (supports both claude-cowork and openclaw paths)
+  const isProjectSelected =
+    globalWorkspace &&
+    globalWorkspace !== "." &&
+    (globalWorkspace.startsWith("/home/coder/claude-cowork/") ||
+      globalWorkspace.startsWith("/home/coder/.openclaw/workspace/"));
   const projectName = isProjectSelected
     ? globalWorkspace!.split("/").pop() ?? ""
     : "";

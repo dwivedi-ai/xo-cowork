@@ -73,10 +73,12 @@ export function useChat(currentSessionId?: string) {
         const hasActivePresets = Object.values(permissionPresets).some(Boolean);
 
         // Inject workspace context for project-scoped new sessions
-        const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
         const ws = settingsState.workspaceDirectory;
         const isProjectScoped =
-          !currentSessionId && ws && ws !== WORKSPACE_ROOT && ws.startsWith(WORKSPACE_ROOT + "/");
+          !currentSessionId &&
+          ws &&
+          (ws.startsWith("/home/coder/claude-cowork/") ||
+            ws.startsWith("/home/coder/.openclaw/workspace/"));
         const promptText = isProjectScoped
           ? `${text.trim()}\n\n---\n\n> **Project context**\n> Working directory: \`${ws}\`\n>\n> The project charter lives in this directory:\n> - \`WORKSPACE.md\` — mission, architecture, boundaries, current focus\n> - \`OBJECTIVES.md\` — OKR table, key results, weekly plan\n> - \`AGENTS.md\` — execution rules and the logs you must append to\n> - \`sessions.json\` — index of prior sessions in this project\n>\n> **Rules**\n> - Read the three charter files before making changes on any non-trivial task.\n> - Check \`sessions.json\` for prior work; avoid duplication, build on decisions.\n> - Keep all file writes inside the working directory above.\n> - At task end, append a row to the relevant log in \`AGENTS.md\` using its Reporting Format.`
           : text.trim();
@@ -87,10 +89,11 @@ export function useChat(currentSessionId?: string) {
           model: settingsState.selectedModel,
           provider_id: settingsState.selectedProviderId,
           agent: settingsState.selectedAgent,
+          ...(settingsState.agentName ? { agent_name: settingsState.agentName } : {}),
           attachments: attachments ?? [],
           permission_presets: hasActivePresets ? permissionPresets : null,
           reasoning: settingsState.reasoningEnabled,
-          workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
+          workspace: settingsState.workspaceDirectory ?? "/home/coder/claude-cowork",
         });
 
         chatState.startGeneration(res.stream_id, res.session_id ?? "pending");
@@ -100,18 +103,18 @@ export function useChat(currentSessionId?: string) {
         // partially-populated assistant messages that duplicate the StreamingMessage.
         // Messages are refetched after DONE in the SSE handler.
 
-        // Navigate to session if this was a new conversation
-        // For new sessions where session_id is null (streaming creation),
-        // navigation is deferred until session-created SSE event arrives.
+        // Optimistically add new session to sidebar immediately.
+        // Navigation is handled by the DONE event in use-sse.ts after streaming
+        // finishes — navigating here causes Landing to unmount mid-stream, which
+        // kills the SSE connection and makes the response disappear.
         if (!currentSessionId && res.session_id) {
-          // Optimistically add the session to the sidebar with user text as temp title
           const tempSession: SessionResponse = {
             id: res.session_id,
             project_id: null,
             parent_id: null,
             slug: null,
             agent: null,
-            directory: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
+            directory: settingsState.workspaceDirectory ?? "/home/coder/claude-cowork",
             title: text.trim().slice(0, 60),
             version: 0,
             summary_additions: 0,
@@ -135,7 +138,6 @@ export function useChat(currentSessionId?: string) {
               };
             },
           );
-          router.push(getChatRoute(res.session_id));
         }
         return true;
       } catch (err) {
@@ -237,7 +239,7 @@ export function useChat(currentSessionId?: string) {
           attachments: attachments ?? [],
           permission_presets: hasActivePresets ? permissionPresets : null,
           reasoning: settingsState.reasoningEnabled,
-          workspace: settingsState.workspaceDirectory ?? "/home/coder/.openclaw/workspace",
+          workspace: settingsState.workspaceDirectory ?? "/home/coder/claude-cowork",
         });
 
         chatState.startGeneration(res.stream_id, res.session_id!);
