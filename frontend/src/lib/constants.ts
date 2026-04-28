@@ -282,8 +282,6 @@ export const API = {
   CODEX: {
     STATUS: "/api/codex/status",
     SETUP: "/codex/setup",
-    CALLBACK: "/codex/setup/callback",
-    SETUP_STATUS: (sessionId: string) => `/codex/setup/status/${sessionId}` as const,
   },
   HEALTH: "/health",
   GATEWAY: {

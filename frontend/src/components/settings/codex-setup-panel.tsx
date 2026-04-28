@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import {
   Check,
+  Copy,
   Loader2,
   AlertCircle,
   ExternalLink,
@@ -14,10 +15,10 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { API, queryKeys, XO_COWORK_API_BASE, IS_DESKTOP } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
+import { consumeCodexSetupStream } from "@/lib/codex-device-auth";
 
 interface CodexAccount {
   id: string;
@@ -63,19 +64,30 @@ export function CodexSetupPanel() {
   });
 
   const [connecting, setConnecting] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [callbackInput, setCallbackInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [userCode, setUserCode] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const openedRef = useRef(false);
+
+  const openAuthUrl = useCallback((url: string) => {
+    if (openedRef.current) return;
+    openedRef.current = true;
+    if (IS_DESKTOP) {
+      desktopAPI.openExternal(url);
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }, []);
 
   const startSetup = useCallback(async () => {
     setError(null);
     setConnecting(true);
-    setSessionId(null);
+    setInstalling(false);
     setAuthUrl(null);
-    setCallbackInput("");
+    setUserCode(null);
+    openedRef.current = false;
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -94,97 +106,45 @@ export function CodexSetupPanel() {
         return;
       }
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "session") {
-              setSessionId(data.session_id);
-            } else if (data.type === "auth_url") {
-              setAuthUrl(data.url);
-              if (IS_DESKTOP) {
-                desktopAPI.openExternal(data.url);
-              } else {
-                window.open(data.url, "_blank", "noopener,noreferrer");
-              }
-            } else if (data.type === "done" && data.status === "completed") {
-              qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
-              setConnecting(false);
-              setAuthUrl(null);
-              setSessionId(null);
-              return;
-            } else if (data.type === "error") {
-              setError(data.error || t("codexSetupError"));
-              setConnecting(false);
-              return;
-            }
-          } catch {
-            /* ignore parse errors */
+      await consumeCodexSetupStream(resp.body, {
+        onInstalling: () => setInstalling(true),
+        onUrl: (u) => {
+          setAuthUrl(u);
+          openAuthUrl(u);
+        },
+        onCode: (c) => setUserCode(c),
+        onDone: (rc) => {
+          setInstalling(false);
+          if (rc === 0) {
+            qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
+            setConnecting(false);
+            setAuthUrl(null);
+            setUserCode(null);
+          } else {
+            setError(t("codexLoginFailed"));
+            setConnecting(false);
           }
-        }
-      }
-
-      if (connecting) {
-        setError(t("codexSetupTimeout"));
-        setConnecting(false);
-      }
+        },
+        onError: (msg) => {
+          setError(msg || t("codexSetupError"));
+          setInstalling(false);
+          setConnecting(false);
+        },
+      });
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         setError(String(e));
         setConnecting(false);
       }
     }
-  }, [t, qc, connecting]);
-
-  const submitCallback = useCallback(async () => {
-    if (!sessionId || !callbackInput.trim()) return;
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const url = `${XO_COWORK_API_BASE}${API.CODEX.CALLBACK}`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: callbackInput.trim(), session_id: sessionId }),
-      });
-
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        setError(body.detail || t("codexCallbackFailed"));
-        setSubmitting(false);
-        return;
-      }
-
-      qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
-      setConnecting(false);
-      setAuthUrl(null);
-      setSessionId(null);
-      setCallbackInput("");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [sessionId, callbackInput, t, qc]);
+  }, [t, qc, openAuthUrl]);
 
   const cancelSetup = useCallback(() => {
     abortRef.current?.abort();
     setConnecting(false);
-    setSessionId(null);
+    setInstalling(false);
     setAuthUrl(null);
-    setCallbackInput("");
+    setUserCode(null);
     setError(null);
   }, []);
 
@@ -201,7 +161,7 @@ export function CodexSetupPanel() {
           ]
         : [];
 
-  const midAuth = authUrl && connecting;
+  const midAuth = connecting;
 
   return (
     <div className="space-y-6">
@@ -247,11 +207,10 @@ export function CodexSetupPanel() {
       {/* Body */}
       {midAuth ? (
         <AuthInProgressCard
-          authUrl={authUrl!}
-          callbackInput={callbackInput}
-          setCallbackInput={setCallbackInput}
-          submitting={submitting}
-          onSubmit={submitCallback}
+          authUrl={authUrl}
+          userCode={userCode}
+          installing={installing}
+          onReopen={openAuthUrl}
           onCancel={cancelSetup}
           t={t}
         />
@@ -388,21 +347,34 @@ export function CodexSetupPanel() {
 
 function AuthInProgressCard({
   authUrl,
-  callbackInput,
-  setCallbackInput,
-  submitting,
-  onSubmit,
+  userCode,
+  installing,
+  onReopen,
   onCancel,
   t,
 }: {
-  authUrl: string;
-  callbackInput: string;
-  setCallbackInput: (v: string) => void;
-  submitting: boolean;
-  onSubmit: () => void;
+  authUrl: string | null;
+  userCode: string | null;
+  installing: boolean;
+  onReopen: (url: string) => void;
   onCancel: () => void;
   t: (key: string) => string;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(async () => {
+    if (!userCode) return;
+    try {
+      await navigator.clipboard.writeText(userCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — user can still read the code */
+    }
+  }, [userCode]);
+
+  const waitingForCli = !authUrl || !userCode;
+
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-primary)]">
       {/* pulsing top accent */}
@@ -419,7 +391,11 @@ function AuthInProgressCard({
       <div className="flex items-center justify-between px-5 pt-4">
         <div className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
           <Loader2 className="h-4 w-4 animate-spin text-[var(--text-secondary)]" />
-          {t("codexWaitingAuth")}
+          {installing
+            ? "Installing Codex CLI…"
+            : waitingForCli
+              ? "Preparing sign-in…"
+              : t("codexWaitingAuth")}
         </div>
         <button
           onClick={onCancel}
@@ -438,55 +414,69 @@ function AuthInProgressCard({
               1
             </span>
             <span className="leading-snug">
-              Sign in at the page we opened in your browser.
+              Open the sign-in page
+              {authUrl ? " (we opened it for you)" : ""} and sign in to your ChatGPT account.
             </span>
           </li>
           <li className="flex items-start gap-2.5">
             <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] bg-[var(--surface-secondary)] font-mono text-[9px] font-semibold text-[var(--text-secondary)]">
               2
             </span>
-            <span className="leading-snug">{t("codexPasteInstruction")}</span>
+            <span className="leading-snug">
+              Enter the one-time code shown below. It expires in 15 minutes.
+            </span>
           </li>
         </ol>
 
-        <div className="flex items-stretch gap-2">
-          <Input
-            type="text"
-            value={callbackInput}
-            onChange={(e) => setCallbackInput(e.target.value)}
-            placeholder={t("codexPastePlaceholder")}
-            className="flex-1 font-mono text-xs"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && callbackInput.trim() && !submitting) onSubmit();
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={onSubmit}
-            disabled={!callbackInput.trim() || submitting}
-            className="shrink-0 gap-1.5"
-          >
-            {submitting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <>
-                {t("codexSubmitCallback")}
-                <ArrowRight className="h-3 w-3" />
-              </>
-            )}
-          </Button>
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] p-4">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+            One-time code
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              className="flex-1 select-all rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 py-2 font-mono text-xl font-semibold tracking-[0.2em] text-[var(--text-primary)]"
+              aria-live="polite"
+            >
+              {userCode ?? "····-·····"}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={copyCode}
+              disabled={!userCode}
+              className="shrink-0 gap-1.5"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="mt-3 flex items-center gap-4 border-t border-[var(--border-default)] pt-3">
-          <a
-            href={authUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] font-medium text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-          >
-            <ExternalLink className="h-2.5 w-2.5" />
-            Re-open login page
-          </a>
+          {authUrl && (
+            <button
+              type="button"
+              onClick={() => onReopen(authUrl)}
+              className="inline-flex items-center gap-1 text-[10px] font-medium text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              <ExternalLink className="h-2.5 w-2.5" />
+              Re-open login page
+            </button>
+          )}
+          <div className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)]">
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            Waiting for you to finish sign-in…
+          </div>
         </div>
       </div>
     </div>

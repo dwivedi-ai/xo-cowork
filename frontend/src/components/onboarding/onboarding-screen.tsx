@@ -22,6 +22,7 @@ import {
   AlertCircle,
   RefreshCw,
   Info,
+  Copy,
 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { api, ApiError } from "@/lib/api";
 import { API, IS_DESKTOP, XO_COWORK_API_BASE, queryKeys } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
+import { consumeCodexSetupStream } from "@/lib/codex-device-auth";
 import {
   WhatsAppIcon,
   DiscordIcon,
@@ -355,19 +357,39 @@ function ModelsStep({
     refetchInterval: 10_000,
   });
   const [codexConnecting, setCodexConnecting] = useState(false);
-  const [codexSessionId, setCodexSessionId] = useState<string | null>(null);
   const [codexAuthUrl, setCodexAuthUrl] = useState<string | null>(null);
-  const [codexCallbackInput, setCodexCallbackInput] = useState("");
-  const [codexSubmitting, setCodexSubmitting] = useState(false);
+  const [codexUserCode, setCodexUserCode] = useState<string | null>(null);
+  const [codexInstalling, setCodexInstalling] = useState(false);
+  const [codexCodeCopied, setCodexCodeCopied] = useState(false);
   const [codexError, setCodexError] = useState<string | null>(null);
   const codexAbortRef = useRef<AbortController | null>(null);
+  const codexOpenedRef = useRef(false);
+
+  const openCodexUrl = useCallback((u: string) => {
+    if (codexOpenedRef.current) return;
+    codexOpenedRef.current = true;
+    if (IS_DESKTOP) desktopAPI.openExternal(u);
+    else window.open(u, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const copyCodexCode = useCallback(async () => {
+    if (!codexUserCode) return;
+    try {
+      await navigator.clipboard.writeText(codexUserCode);
+      setCodexCodeCopied(true);
+      setTimeout(() => setCodexCodeCopied(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  }, [codexUserCode]);
 
   const startCodexSetup = useCallback(async () => {
     setCodexError(null);
     setCodexConnecting(true);
-    setCodexSessionId(null);
+    setCodexInstalling(false);
     setCodexAuthUrl(null);
-    setCodexCallbackInput("");
+    setCodexUserCode(null);
+    codexOpenedRef.current = false;
 
     const ctrl = new AbortController();
     codexAbortRef.current = ctrl;
@@ -384,84 +406,47 @@ function ModelsStep({
         setCodexConnecting(false);
         return;
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "session") {
-              setCodexSessionId(data.session_id);
-            } else if (data.type === "auth_url") {
-              setCodexAuthUrl(data.url);
-              if (IS_DESKTOP) desktopAPI.openExternal(data.url);
-              else window.open(data.url, "_blank", "noopener,noreferrer");
-            } else if (data.type === "done" && data.status === "completed") {
-              await qc.refetchQueries({ queryKey: queryKeys.codexStatus });
-              setCodexConnecting(false);
-              setCodexAuthUrl(null);
-              setCodexSessionId(null);
-              return;
-            } else if (data.type === "error") {
-              setCodexError(data.error || "Codex setup error");
-              setCodexConnecting(false);
-              return;
-            }
-          } catch {
-            /* ignore */
+
+      await consumeCodexSetupStream(resp.body, {
+        onInstalling: () => setCodexInstalling(true),
+        onUrl: (u) => {
+          setCodexAuthUrl(u);
+          openCodexUrl(u);
+        },
+        onCode: (c) => setCodexUserCode(c),
+        onDone: (rc) => {
+          setCodexInstalling(false);
+          if (rc === 0) {
+            qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
+            qc.refetchQueries({ queryKey: queryKeys.codexStatus });
+            setCodexConnecting(false);
+            setCodexAuthUrl(null);
+            setCodexUserCode(null);
+          } else {
+            setCodexError("Codex sign-in failed. Please try again.");
+            setCodexConnecting(false);
           }
-        }
-      }
+        },
+        onError: (msg) => {
+          setCodexError(msg || "Codex setup error");
+          setCodexInstalling(false);
+          setCodexConnecting(false);
+        },
+      });
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         setCodexError(String(e));
         setCodexConnecting(false);
       }
     }
-  }, [qc]);
-
-  const submitCodexCallback = useCallback(async () => {
-    if (!codexSessionId || !codexCallbackInput.trim()) return;
-    setCodexSubmitting(true);
-    setCodexError(null);
-    try {
-      const url = `${XO_COWORK_API_BASE}${API.CODEX.CALLBACK}`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: codexCallbackInput.trim(), session_id: codexSessionId }),
-      });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        setCodexError(body.detail || "Codex callback failed");
-        setCodexSubmitting(false);
-        return;
-      }
-      qc.invalidateQueries({ queryKey: queryKeys.codexStatus });
-      setCodexConnecting(false);
-      setCodexAuthUrl(null);
-      setCodexSessionId(null);
-      setCodexCallbackInput("");
-    } catch (e) {
-      setCodexError(String(e));
-    } finally {
-      setCodexSubmitting(false);
-    }
-  }, [codexSessionId, codexCallbackInput, qc]);
+  }, [qc, openCodexUrl]);
 
   const cancelCodexSetup = useCallback(() => {
     codexAbortRef.current?.abort();
     setCodexConnecting(false);
-    setCodexSessionId(null);
+    setCodexInstalling(false);
     setCodexAuthUrl(null);
-    setCodexCallbackInput("");
+    setCodexUserCode(null);
     setCodexError(null);
   }, []);
 
@@ -689,41 +674,59 @@ const saveEnvVar = async () => {
                 </div>
               )}
 
-              {codexAuthUrl && codexConnecting ? (
+              {codexConnecting ? (
                 <div className="rounded-lg border border-[var(--border-default)] p-3 space-y-2">
                   <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Waiting for Codex sign-in…</span>
+                    <span>
+                      {codexInstalling
+                        ? "Installing Codex CLI…"
+                        : !codexAuthUrl || !codexUserCode
+                          ? "Preparing Codex sign-in…"
+                          : "Waiting for Codex sign-in…"}
+                    </span>
                   </div>
                   <p className="text-[11px] text-[var(--text-tertiary)]">
-                    Paste the callback URL from the browser after signing in.
+                    Sign in at the page we opened and enter the one-time code below. It expires in 15 minutes.
                   </p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={codexCallbackInput}
-                      onChange={(e) => setCodexCallbackInput(e.target.value)}
-                      placeholder="Paste callback URL or code"
-                      className="font-mono text-xs"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={submitCodexCallback}
-                      disabled={!codexCallbackInput.trim() || codexSubmitting}
-                    >
-                      {codexSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Submit"}
-                    </Button>
+                  <div className="rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] p-2.5">
+                    <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+                      One-time code
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 select-all rounded border border-[var(--border-default)] bg-[var(--surface-secondary)] px-2.5 py-1.5 font-mono text-base font-semibold tracking-[0.2em] text-[var(--text-primary)]"
+                        aria-live="polite"
+                      >
+                        {codexUserCode ?? "····-·····"}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={copyCodexCode}
+                        disabled={!codexUserCode}
+                        className="shrink-0 gap-1.5"
+                      >
+                        {codexCodeCopied ? (
+                          <><Check className="h-3 w-3" /> Copied</>
+                        ) : (
+                          <><Copy className="h-3 w-3" /> Copy</>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <a
-                      href={codexAuthUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-                    >
-                      <ExternalLink className="h-2.5 w-2.5" />
-                      Re-open login page
-                    </a>
+                    {codexAuthUrl && (
+                      <button
+                        type="button"
+                        onClick={() => openCodexUrl(codexAuthUrl)}
+                        className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                      >
+                        <ExternalLink className="h-2.5 w-2.5" />
+                        Re-open login page
+                      </button>
+                    )}
                     <button
                       onClick={cancelCodexSetup}
                       className="text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] ml-auto"
