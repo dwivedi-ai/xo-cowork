@@ -92,7 +92,7 @@ interface SettingsStore {
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
-      hasCompletedOnboarding: false,
+      hasCompletedOnboarding: true,
       companyName: "",
       selectedModel: null,
       selectedProviderId: null,

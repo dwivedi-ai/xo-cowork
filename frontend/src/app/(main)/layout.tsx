@@ -25,7 +25,7 @@ import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { OnboardingGate } from "@/components/onboarding/onboarding-gate";
+
 import { useAutoDetectProvider } from "@/hooks/use-auto-detect-provider";
 import { useActivityStore } from "@/stores/activity-store";
 import { useArtifactStore } from "@/stores/artifact-store";
@@ -204,10 +204,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       {/* Splash screen for desktop app initialization */}
       {showSplash && <SplashScreen />}
 
-      {/* Redirect first-time users to /onboard — no render */}
-      <Suspense fallback={null}>
-        <OnboardingGate />
-      </Suspense>
+
 
       {/* Top progress bar for route transitions */}
       <RouteProgressBar />

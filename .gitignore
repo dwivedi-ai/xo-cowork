@@ -77,3 +77,9 @@ SECURITY.md
 README.zh-CN.md
 reminders.md
 /docs/
+
+# rclone config (contains OAuth tokens)
+rclone.conf
+
+# MCP tokens (contains GitHub PAT)
+mcp-tokens.json

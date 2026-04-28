@@ -33,7 +33,7 @@ type TabId = (typeof SETTINGS_TABS)[number]["id"];
 // wired up and reachable by direct URL (e.g. /settings?tab=automations), so
 // re-enabling is a one-line change — remove the id from this set.
 // Noted in CLAUDE.md → "Hidden UI features".
-const HIDDEN_TABS: ReadonlySet<TabId> = new Set<TabId>(["automations", "plugins"]);
+const HIDDEN_TABS: ReadonlySet<TabId> = new Set<TabId>(["automations"]);
 
 const VISIBLE_SETTINGS_TABS = SETTINGS_TABS.filter((tab) => !HIDDEN_TABS.has(tab.id));
 

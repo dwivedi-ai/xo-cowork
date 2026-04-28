@@ -40,6 +40,11 @@ import {
 } from "@/hooks/use-connectors";
 import type { PluginInfo, SkillInfo } from "@/types/plugins";
 import type { ConnectorInfo } from "@/types/connectors";
+import { GDriveConnectorTile } from "@/components/connectors/gdrive-connector";
+import { OneDriveConnectorTile } from "@/components/connectors/onedrive-connector";
+import { GitHubConnectorTile } from "@/components/connectors/github-connector";
+import { VercelConnectorTile } from "@/components/connectors/vercel-connector";
+import { ManusConnectorTile } from "@/components/connectors/manus-connector";
 
 const SOURCE_COLORS: Record<string, string> = {
   builtin: "bg-blue-500/10 text-blue-400",
@@ -160,6 +165,36 @@ function ConnectorsTab({ search }: { search: string }) {
 
   return (
     <>
+      {/* ---- Cloud Storage (rclone-backed) ---- */}
+      <div className="mb-5">
+        <h3 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
+          Cloud Storage
+        </h3>
+        <div className="space-y-2">
+          <GDriveConnectorTile />
+          <OneDriveConnectorTile />
+        </div>
+      </div>
+
+      {/* ---- Dev Tools ---- */}
+      <div className="mb-5">
+        <h3 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
+          Dev Tools
+        </h3>
+        <div className="space-y-2">
+          <GitHubConnectorTile />
+          <VercelConnectorTile />
+        </div>
+      </div>
+
+      {/* ---- AI Agents ---- */}
+      <div className="mb-5">
+        <h3 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
+          AI Agents
+        </h3>
+        <ManusConnectorTile />
+      </div>
+
       <div className="flex items-center justify-between mb-3">
         {!isLoading && (
           <p className="text-[11px] text-[var(--text-tertiary)]">
