@@ -173,7 +173,7 @@ export function PersonalityStep({
         value={activeValue}
         onChange={(e) => handleTextareaChange(e.target.value)}
         spellCheck={false}
-        className="w-full h-72 resize-none rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40 focus:border-[var(--color-primary)]"
+        className="w-full h-[clamp(9rem,26vh,18rem)] resize-none rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40 focus:border-[var(--color-primary)]"
       />
 
       {/* Reset row */}

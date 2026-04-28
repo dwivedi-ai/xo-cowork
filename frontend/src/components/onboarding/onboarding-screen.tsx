@@ -529,7 +529,7 @@ const saveEnvVar = async () => {
         Connect a provider to power your assistant.
       </p>
 
-      <div className="space-y-2">
+      <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1 -mr-1">
         {/* Anthropic */}
         <ProviderOption
           selected={selected === "anthropic"}
@@ -997,7 +997,7 @@ function ChannelsStep({
         Bring your AI assistant to the apps your team already uses.
       </p>
 
-      <div className="space-y-2">
+      <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1 -mr-1">
         {PLATFORMS.filter((p) => !p.hidden).map((platform) => (
           <ChannelRow
             key={platform.id}
