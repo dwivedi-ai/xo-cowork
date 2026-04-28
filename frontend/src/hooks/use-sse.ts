@@ -13,9 +13,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useArtifactStore } from "@/stores/artifact-store";
 import { useWorkspaceStore, type WorkspaceTodo, type WorkspaceFile } from "@/stores/workspace-store";
-import { useAuthStore } from "@/stores/auth-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { proxyApi } from "@/lib/proxy-api";
 import { api } from "@/lib/api";
 import { isPreviewableFile, artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
 import { getChatRoute } from "@/lib/routes";
@@ -627,31 +625,6 @@ export function useSSE(streamId: string | null) {
 
       // Refetch sessions to pick up the title (set synchronously before DONE now)
       queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
-
-      // Refresh billing balance from XO-Cowork proxy after each generation
-      const auth = useAuthStore.getState();
-      if (auth.isConnected) {
-        proxyApi
-          .get<{ credits: number; daily_free_tokens_used: number; daily_free_token_limit: number }>(
-            "/api/billing/balance",
-          )
-          .then((balance) => {
-            const currentUser = useAuthStore.getState().user;
-            if (currentUser) {
-              useAuthStore.getState().updateUser({
-                ...currentUser,
-                billing_mode:
-                  balance.credits > 0 ? "credits" : currentUser.billing_mode,
-                credit_balance: balance.credits,
-                daily_free_tokens_used: balance.daily_free_tokens_used,
-                daily_free_token_limit: balance.daily_free_token_limit,
-              });
-            }
-          })
-          .catch(() => {
-            // Silently ignore balance refresh failures
-          });
-      }
 
       client.close();
     });

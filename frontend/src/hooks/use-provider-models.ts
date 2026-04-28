@@ -6,10 +6,9 @@ import { useSettingsStore } from "@/stores/settings-store";
 import type { ActiveProvider } from "@/stores/settings-store";
 
 /** Provider IDs that are NOT user-managed BYOK providers. */
-const NON_BYOK_PROVIDERS = new Set(["openai-subscription", "ollama", "xo-cowork-proxy"]);
+const NON_BYOK_PROVIDERS = new Set(["openai-subscription", "ollama"]);
 
 const PROVIDER_ID_MAP: Record<NonNullable<ActiveProvider>, string | null> = {
-  "xo-cowork": "xo-cowork-proxy",
   byok: null, // Special: show models from ALL BYOK providers
   chatgpt: "openai-subscription",
   ollama: "ollama",
@@ -29,7 +28,7 @@ export function useProviderModels() {
 
     if (providerId === null) {
       // "byok" mode: show models from all BYOK providers
-      // (everything except subscription, ollama, and xo-cowork proxy)
+      // (everything except subscription and ollama)
       return allModels.filter((m) => !NON_BYOK_PROVIDERS.has(m.provider_id));
     }
 

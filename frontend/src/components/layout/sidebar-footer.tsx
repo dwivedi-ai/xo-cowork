@@ -3,77 +3,11 @@
 import { User, CreditCard, Settings, Cpu } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import Link from "next/link";
-import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
-import { useAuthStore } from "@/stores/auth-store";
 import { useSettingsStore } from "@/stores/settings-store";
-
-function formatTokenCompact(count: number): string {
-  if (count >= 1_000_000) {
-    const value = count / 1_000_000;
-    const rounded = value.toFixed(1);
-    return `${rounded.endsWith(".0") ? rounded.slice(0, -2) : rounded}M`;
-  }
-  if (count >= 1_000) return `${Math.round(count / 1_000)}K`;
-  return count.toString();
-}
 
 function ProviderStatusBadge() {
   const { t } = useTranslation('common');
   const { activeProvider } = useSettingsStore();
-  const { isConnected, user } = useAuthStore();
-
-  // XO-Cowork provider — show balance or quota
-  if (activeProvider === "xo-cowork" && isConnected && user) {
-    if (user.billing_mode === "credits") {
-      return (
-        <Link
-          href="/settings?tab=providers"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs hover:bg-[var(--surface-secondary)] transition-colors"
-        >
-          <XoCoworkLogo size={12} className="text-[var(--brand-primary)]" />
-          <span className="text-[var(--text-secondary)] font-mono">
-            ${(user.credit_balance / 100).toFixed(2)}
-          </span>
-        </Link>
-      );
-    }
-
-    // Free mode — show quota bar
-    const percent = Math.min(100, (user.daily_free_tokens_used / user.daily_free_token_limit) * 100);
-    const usedCompact = formatTokenCompact(user.daily_free_tokens_used);
-    const limitCompact = formatTokenCompact(user.daily_free_token_limit);
-
-    return (
-      <Link
-        href="/settings?tab=providers"
-        className="block px-3 py-1.5 hover:bg-[var(--surface-secondary)] transition-colors"
-      >
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-1">
-            <XoCoworkLogo size={12} className="text-[var(--brand-primary)]" />
-            <span className="text-[10px] text-[var(--text-tertiary)]">{t('free')}</span>
-          </div>
-          <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
-            {usedCompact} / {limitCompact}
-          </span>
-        </div>
-        <div className="w-full bg-[var(--surface-tertiary)] rounded-full h-1">
-          <div
-            className="h-1 rounded-full transition-all"
-            style={{
-              width: `${percent}%`,
-              backgroundColor:
-                percent >= 90
-                  ? "var(--color-destructive)"
-                  : percent >= 70
-                    ? "var(--color-warning)"
-                    : "var(--brand-primary)",
-            }}
-          />
-        </div>
-      </Link>
-    );
-  }
 
   if (activeProvider === "byok") {
     return null;
@@ -121,9 +55,8 @@ function ProviderStatusBadge() {
 
 export function SidebarFooter() {
   const { t } = useTranslation('common');
-  const { isConnected, user } = useAuthStore();
 
-  const displayName = isConnected && user ? user.email.split("@")[0] : t('localUser');
+  const displayName = t('localUser');
 
   return (
     <div className="border-t border-[var(--border-default)]">

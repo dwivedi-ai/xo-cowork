@@ -65,7 +65,7 @@ const SORT_BUTTONS_SIMPLE: { key: SortMode; i18n: string }[] = [
 ];
 
 /** Providers that have arena ranking data */
-const ARENA_PROVIDERS = new Set<string | null>(["xo-cowork"]);
+const ARENA_PROVIDERS = new Set<string | null>();
 
 export function HeaderModelDropdown() {
   const { t } = useTranslation("common");
@@ -104,10 +104,9 @@ export function HeaderModelDropdown() {
     const modelExists = selectedModel && visibleModels.some((m) => m.id === selectedModel && m.provider_id === selectedProviderId);
     if (!modelExists) {
       let chosen: ModelInfo;
-      if (activeProvider === "xo-cowork" || activeProvider === "byok") {
-        const preferred = visibleModels.find((m) => m.id === "xo-cowork/best-free");
+      if (activeProvider === "byok") {
         const fallback = visibleModels.find((m) => isFreeModel(m));
-        chosen = preferred ?? fallback ?? visibleModels[0];
+        chosen = fallback ?? visibleModels[0];
       } else if (activeProvider === "chatgpt") {
         const preferred = visibleModels.find((m) => m.id === "openai-subscription/gpt-5.4");
         chosen = preferred ?? visibleModels[0];
