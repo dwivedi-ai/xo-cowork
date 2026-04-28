@@ -20,11 +20,11 @@ const nextConfig: NextConfig = {
       return [
         {
           source: "/api/:path*",
-          destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/:path*`,
+          destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002"}/api/:path*`,
         },
         {
           source: "/health",
-          destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/health`,
+          destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002"}/health`,
         },
         {
           source: "/gateway/:path*",

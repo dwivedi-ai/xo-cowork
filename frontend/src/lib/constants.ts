@@ -20,8 +20,7 @@ let _backendUrl: string | null = null;
 let _backendUrlPromise: Promise<string> | null = null;
 
 /** Direct backend URL for SSE streams (avoids Next.js proxy buffering). */
-const FALLBACK_BACKEND_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const FALLBACK_BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
  * Get the backend URL. In desktop mode, this is resolved asynchronously
@@ -102,11 +101,13 @@ export function resolveApiUrl(path: string): string {
 }
 
 /**
- * xo-cowork-api (FastAPI), default http://localhost:5002 — separate from the main app backend
- * (`NEXT_PUBLIC_API_URL`, often :8000). Override with `NEXT_PUBLIC_XO_COWORK_API_URL`.
+ * xo-cowork-api (FastAPI), default http://localhost:5002. Since the bridge
+ * service was folded into xo-cowork-api, `NEXT_PUBLIC_API_URL` and
+ * `NEXT_PUBLIC_XO_COWORK_API_URL` now point at the same backend; the latter
+ * remains available as an override for desktop/remote PWA builds.
  */
 export const XO_COWORK_API_BASE = (
-  process.env.NEXT_PUBLIC_XO_COWORK_API_URL || "http://localhost:5002"
+  process.env.NEXT_PUBLIC_XO_COWORK_API_URL ?? ""
 ).replace(/\/$/, "");
 
 /**
@@ -136,7 +137,7 @@ export const API = {
       if (IS_DESKTOP) return `${getBackendUrlSync()}/api/chat/stream/${streamId}`;
       // Web mode: use relative URL so it goes through Next.js rewrite proxy.
       // Direct backend URLs break in port-forwarded environments (e.g., two
-      // VS Code workspaces) where localhost:8000 may point to the wrong backend.
+      // VS Code workspaces) where localhost:5002 may point to the wrong backend.
       return `/api/chat/stream/${streamId}`;
     },
     ABORT: "/api/chat/abort",
