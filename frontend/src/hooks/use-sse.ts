@@ -196,7 +196,7 @@ export function useSSE(streamId: string | null) {
           parent_id: null,
           slug: null,
           agent: null,
-          directory: useSettingsStore.getState().workspaceDirectory ?? "/home/coder/claude-cowork",
+          directory: useSettingsStore.getState().workspaceDirectory ?? null,
           title: store.getState().pendingUserText?.slice(0, 60) ?? "New conversation",
           version: 0,
           summary_additions: 0,

@@ -74,11 +74,16 @@ export function useChat(currentSessionId?: string) {
 
         // Inject workspace context for project-scoped new sessions
         const ws = settingsState.workspaceDirectory;
-        const isProjectScoped =
-          !currentSessionId &&
-          ws &&
-          (ws.startsWith("/home/coder/claude-cowork/") ||
-            ws.startsWith("/home/coder/.openclaw/workspace/"));
+        const workspaceRoots =
+          (queryClient.getQueryData<{ roots: Record<string, string> }>(["workspace-config"])?.roots) ?? {};
+        const agentNameForWorkspace = (wsPath: string | null | undefined): string | undefined => {
+          if (!wsPath) return undefined;
+          for (const [backend, root] of Object.entries(workspaceRoots)) {
+            if (wsPath.startsWith(root + "/") || wsPath === root) return backend;
+          }
+          return undefined;
+        };
+        const isProjectScoped = !currentSessionId && !!ws && agentNameForWorkspace(ws) !== undefined;
         const promptText = isProjectScoped
           ? `${text.trim()}\n\n---\n\n> **Project context**\n> Working directory: \`${ws}\`\n>\n> The project charter lives in this directory:\n> - \`WORKSPACE.md\` — mission, architecture, boundaries, current focus\n> - \`OBJECTIVES.md\` — OKR table, key results, weekly plan\n> - \`AGENTS.md\` — execution rules and the logs you must append to\n> - \`sessions.json\` — index of prior sessions in this project\n>\n> **Rules**\n> - Read the three charter files before making changes on any non-trivial task.\n> - Check \`sessions.json\` for prior work; avoid duplication, build on decisions.\n> - Keep all file writes inside the working directory above.\n> - At task end, append a row to the relevant log in \`AGENTS.md\` using its Reporting Format.`
           : text.trim();
@@ -89,11 +94,13 @@ export function useChat(currentSessionId?: string) {
           model: settingsState.selectedModel,
           provider_id: settingsState.selectedProviderId,
           agent: settingsState.selectedAgent,
-          ...(settingsState.agentName ? { agent_name: settingsState.agentName } : {}),
+          // Existing sessions: let server detect backend from session index (never override).
+          // New sessions: derive from workspace root — null means server uses AGENT_NAME default.
+          agent_name: currentSessionId ? undefined : agentNameForWorkspace(ws),
           attachments: attachments ?? [],
           permission_presets: hasActivePresets ? permissionPresets : null,
           reasoning: settingsState.reasoningEnabled,
-          workspace: settingsState.workspaceDirectory ?? "/home/coder/claude-cowork",
+          workspace: settingsState.workspaceDirectory ?? null,
         });
 
         chatState.startGeneration(res.stream_id, res.session_id ?? "pending");
@@ -114,7 +121,7 @@ export function useChat(currentSessionId?: string) {
             parent_id: null,
             slug: null,
             agent: null,
-            directory: settingsState.workspaceDirectory ?? "/home/coder/claude-cowork",
+            directory: settingsState.workspaceDirectory ?? null,
             title: text.trim().slice(0, 60),
             version: 0,
             summary_additions: 0,
