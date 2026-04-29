@@ -106,7 +106,7 @@ export const useSettingsStore = create<SettingsStore>()(
       reasoningEnabled: true,
       permissionPresets: { fileChanges: true, runCommands: true },
       savedPermissions: [],
-      workspaceDirectory: "/home/coder/claude-cowork",
+      workspaceDirectory: null,
       hasSeenHints: false,
       language: "auto",
       activeProvider: "byok",

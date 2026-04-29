@@ -8,10 +8,7 @@ interface WorkspaceConfigResponse {
   default: string;
 }
 
-const FALLBACKS: Record<string, string> = {
-  claude_code: "/home/coder/claude-cowork",
-  openclaw: "/home/coder/.openclaw/workspace",
-};
+const FALLBACKS: Record<string, string> = {};
 
 export function useWorkspaceConfig() {
   const { data } = useQuery<WorkspaceConfigResponse>({
@@ -22,8 +19,8 @@ export function useWorkspaceConfig() {
 
   const agentName = useSettingsStore((s) => s.agentName);
 
-  // Active backend: explicit agent-name setting beats server default.
-  const backend = agentName ?? data?.default ?? "openclaw";
+  // Server default wins; stored agentName is only a fallback during loading.
+  const backend = data?.default ?? agentName ?? "openclaw";
   const workspaceRoot =
     data?.roots[backend] ?? FALLBACKS[backend] ?? FALLBACKS.openclaw;
 
