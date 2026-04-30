@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { API, queryKeys, XO_COWORK_API_BASE, IS_DESKTOP } from "@/lib/constants";
+import { API, queryKeys, resolveCoworkApiUrl, IS_DESKTOP } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
 import { consumeCodexSetupStream } from "@/lib/codex-device-auth";
 
@@ -93,7 +93,7 @@ export function CodexSetupPanel() {
     abortRef.current = ctrl;
 
     try {
-      const url = `${XO_COWORK_API_BASE}${API.CODEX.SETUP}`;
+      const url = resolveCoworkApiUrl(API.CODEX.SETUP);
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
