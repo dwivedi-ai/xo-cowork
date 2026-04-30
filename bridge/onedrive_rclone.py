@@ -39,11 +39,12 @@ import httpx
 from gdrive_rclone import (
     OAUTH_TIMEOUT,
     RCLONE_CONFIG_PATH,
-    RCLONE_OAUTH_PORT,
     SESSION_TTL,
     _NAME_RE,
     _PipeReader,
+    _deliver_code_to_rclone,
     _rc_post,
+    _resolve_oauth_url,
     ensure_rclone_running,
     rclone_available,
 )
@@ -86,7 +87,8 @@ class OneDriveSession:
     oauth_started_at: float | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
     verification_input: str | None = None
-    needs_manual_code: bool = False
+    needs_manual_code: bool = True
+    oauth_state: str | None = None
 
 
 _sessions: dict[str, OneDriveSession] = {}
@@ -200,14 +202,15 @@ async def _resolve_default_drive(token_json: str) -> tuple[str, str]:
 
 async def _run_oauth_flow(session: OneDriveSession) -> None:
     """
-    Mirrors gdrive_rclone._run_oauth_flow but for OneDrive:
+    Mirrors gdrive_rclone._run_oauth_flow but for OneDrive — manual paste:
       1. Spawn `rclone authorize --auth-no-open-browser onedrive`
-      2. Read auth URL from stderr (Microsoft sign-in page)
-      3. Wait for the subprocess to exit (user signs in → rclone receives
-         the callback on :53682 → prints token JSON to stdout → exits)
-      4. Resolve drive_id + drive_type via Microsoft Graph
-      5. Append a complete rclone.conf section
-      6. Verify the remote shows up in /config/listremotes
+      2. Read local /auth URL from stderr → resolve Microsoft URL via 307
+      3. User signs in at Microsoft, pastes redirect URL into the UI
+      4. Bridge delivers code locally to rclone's callback server
+      5. Capture token JSON from stdout
+      6. Resolve drive_id + drive_type via Microsoft Graph
+      7. Append a complete rclone.conf section
+      8. Verify the remote shows up in /config/listremotes
     """
     name = session.remote_name
     proc: subprocess.Popen | None = None
@@ -224,8 +227,8 @@ async def _run_oauth_flow(session: OneDriveSession) -> None:
         stderr_reader = _PipeReader(proc.stderr, "stderr")
         stdout_reader = _PipeReader(proc.stdout, "stdout")
 
-        # ── Wait for auth URL on stderr ──────────────────────────────────
-        auth_url: str | None = None
+        # ── Wait for the local auth URL on stderr ────────────────────────
+        local_auth_url: str | None = None
         url_deadline = time.time() + 15
         while time.time() < url_deadline:
             if session.status == "cancelled":
@@ -234,13 +237,13 @@ async def _run_oauth_flow(session: OneDriveSession) -> None:
             for line in stderr_reader.lines:
                 url = _extract_auth_url(line)
                 if url:
-                    auth_url = url
+                    local_auth_url = url
                     break
-            if auth_url:
+            if local_auth_url:
                 break
             await asyncio.sleep(0.3)
 
-        if not auth_url:
+        if not local_auth_url:
             session.status = "failed"
             session.error = (
                 "rclone authorize did not produce an auth URL.\n"
@@ -249,28 +252,51 @@ async def _run_oauth_flow(session: OneDriveSession) -> None:
             proc.kill()
             return
 
-        session.auth_url = auth_url
+        # Resolve the actual Microsoft URL via the local /auth → 307 Location.
+        try:
+            ms_url, state = await _resolve_oauth_url(local_auth_url)
+        except Exception as exc:
+            session.status = "failed"
+            session.error = f"Could not resolve Microsoft auth URL: {exc}"
+            proc.kill()
+            return
+
+        session.auth_url = ms_url
+        session.oauth_state = state
         session.oauth_started_at = time.time()
         session.status = "awaiting_oauth"
-        log.info("OneDrive %s: auth URL ready: %s", session.session_id, auth_url[:80])
         log.info(
-            "OneDrive %s: rclone callback server ready on :%d",
-            session.session_id, RCLONE_OAUTH_PORT,
+            "OneDrive %s: Microsoft auth URL ready (state=%s…)",
+            session.session_id, state[:8],
         )
 
-        # ── Wait for `rclone authorize` to exit ──────────────────────────
-        log.info("OneDrive %s: waiting for auth to complete...", session.session_id)
+        # ── Wait for paste → deliver code locally → rclone exits ─────────
+        log.info("OneDrive %s: waiting for user to paste redirect URL...", session.session_id)
         complete_deadline = time.time() + OAUTH_TIMEOUT
+        delivered = False
         while time.time() < complete_deadline:
             if session.status == "cancelled":
                 proc.kill()
                 return
             if proc.poll() is not None:
                 break
+            if not delivered and session.verification_input:
+                code = session.verification_input
+                try:
+                    await _deliver_code_to_rclone(state, code)
+                    delivered = True
+                    log.info("OneDrive %s: delivered code to rclone callback", session.session_id)
+                except Exception as exc:
+                    log.warning("OneDrive %s: delivery failed: %s", session.session_id, exc)
+                    session.verification_input = None
             await asyncio.sleep(1)
         else:
             session.status = "failed"
-            session.error = "Timed out waiting for Microsoft sign-in."
+            session.error = (
+                "Timed out waiting for paste. Click Cancel and try again."
+                if not delivered
+                else "Timed out after delivering the code to rclone."
+            )
             proc.kill()
             return
 

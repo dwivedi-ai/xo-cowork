@@ -21,6 +21,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -89,8 +90,13 @@ class GDriveSession:
     task: asyncio.Task | None = field(default=None, repr=False)
     # Set by POST /sessions/{id}/submit when user pastes the redirect URL
     verification_input: str | None = None
-    # True when port 53682 is busy → user must paste the redirect URL manually
-    needs_manual_code: bool = False
+    # Always True now — manual paste is the only supported path. The user's
+    # browser cannot reach the workspace's :53682 unless an IDE port-forward
+    # is active, so we don't rely on an automatic browser-side callback.
+    needs_manual_code: bool = True
+    # rclone's OAuth state token, captured from the local /auth URL and
+    # replayed back when delivering the code to rclone's local callback.
+    oauth_state: str | None = None
 
 
 _sessions: dict[str, GDriveSession] = {}
@@ -272,20 +278,53 @@ class _PipeReader:
         self._thread.join(timeout=timeout)
 
 
+async def _resolve_oauth_url(local_auth_url: str) -> tuple[str, str]:
+    """
+    GET rclone's local /auth?state=... endpoint (no redirect-following) and
+    return (provider_url, state). rclone responds with HTTP 307 + Location
+    set to the real provider OAuth URL (Google, Microsoft, ...).
+    """
+    parsed = urllib.parse.urlparse(local_auth_url)
+    state = urllib.parse.parse_qs(parsed.query).get("state", [""])[0]
+    if not state:
+        raise RuntimeError(f"Could not parse state from {local_auth_url!r}")
+    async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+        resp = await client.get(local_auth_url)
+        if resp.status_code not in (301, 302, 303, 307, 308):
+            raise RuntimeError(
+                f"rclone /auth returned HTTP {resp.status_code} (expected redirect)"
+            )
+        location = resp.headers.get("location")
+        if not location:
+            raise RuntimeError("rclone /auth response had no Location header")
+    return location, state
+
+
+async def _deliver_code_to_rclone(state: str, code: str) -> None:
+    """Deliver the OAuth code to rclone's local callback server."""
+    callback_url = (
+        f"http://127.0.0.1:{RCLONE_OAUTH_PORT}/"
+        f"?state={urllib.parse.quote(state, safe='')}"
+        f"&code={urllib.parse.quote(code, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+        await client.get(callback_url)
+
+
 async def _run_oauth_flow(session: GDriveSession) -> None:
     """
-    Complete OAuth flow using `rclone authorize` subprocess.
+    Complete OAuth flow using `rclone authorize` subprocess + manual paste.
 
     Both stdout and stderr are drained concurrently via background threads
     to prevent pipe buffer deadlocks (critical on Windows).
 
     Flow:
       1. Spawn: rclone authorize --auth-no-open-browser drive
-      2. Poll stderr for auth URL (appears within ~1s)
-      3. User signs in → rclone receives callback on port 53682
-         OR user pastes redirect URL → we deliver code to rclone
-      4. Poll stdout for token JSON
-      5. Write remote config via RC API /config/create
+      2. Poll stderr for the local URL → resolve Google URL via 307 redirect
+      3. User signs in at Google; pastes the redirect URL into the UI
+      4. Bridge delivers code locally to rclone's callback server
+      5. Poll stdout for token JSON
+      6. Write remote section directly to rclone.conf
     """
     name = session.remote_name
     proc: subprocess.Popen | None = None
@@ -304,8 +343,8 @@ async def _run_oauth_flow(session: GDriveSession) -> None:
         stderr_reader = _PipeReader(proc.stderr, "stderr")
         stdout_reader = _PipeReader(proc.stdout, "stdout")
 
-        # ── 2. Wait for auth URL from stderr ─────────────────────────────
-        auth_url: str | None = None
+        # ── 2. Wait for the local auth URL on stderr ─────────────────────
+        local_auth_url: str | None = None
         url_deadline = time.time() + 15
 
         while time.time() < url_deadline:
@@ -315,13 +354,13 @@ async def _run_oauth_flow(session: GDriveSession) -> None:
             for line in stderr_reader.lines:
                 url = _extract_auth_url(line)
                 if url:
-                    auth_url = url
+                    local_auth_url = url
                     break
-            if auth_url:
+            if local_auth_url:
                 break
             await asyncio.sleep(0.3)
 
-        if not auth_url:
+        if not local_auth_url:
             session.status = "failed"
             session.error = (
                 "rclone authorize did not produce an auth URL.\n"
@@ -330,35 +369,52 @@ async def _run_oauth_flow(session: GDriveSession) -> None:
             proc.kill()
             return
 
-        session.auth_url = auth_url
+        # Resolve the actual Google URL via the local /auth → 307 Location.
+        try:
+            google_url, state = await _resolve_oauth_url(local_auth_url)
+        except Exception as exc:
+            session.status = "failed"
+            session.error = f"Could not resolve Google auth URL: {exc}"
+            proc.kill()
+            return
+
+        session.auth_url = google_url
+        session.oauth_state = state
         session.oauth_started_at = time.time()
         session.status = "awaiting_oauth"
-        log.info("GDrive %s: auth URL ready: %s", session.session_id, auth_url[:80])
+        log.info(
+            "GDrive %s: Google auth URL ready (state=%s…)",
+            session.session_id, state[:8],
+        )
 
-        # ── 3. rclone's callback server is now listening on port 53682 ─────
-        #    (If it weren't, rclone authorize would have crashed and we'd
-        #     never have gotten an auth URL above.)
-        #    User just needs to open the URL and sign in — rclone handles
-        #    the callback automatically.
-        log.info("GDrive %s: rclone callback server ready on :%d", session.session_id, RCLONE_OAUTH_PORT)
-
-        # ── 4. Wait for rclone authorize to exit & capture token ────────
-        #    `rclone authorize` does NOT write to the config file.
-        #    It outputs the token JSON to stdout. We must capture it,
-        #    then write the remote via the RC API.
-        log.info("GDrive %s: waiting for auth to complete...", session.session_id)
+        # ── 3. Wait for paste → deliver code locally → rclone exits ──────
+        log.info("GDrive %s: waiting for user to paste redirect URL...", session.session_id)
         complete_deadline = time.time() + OAUTH_TIMEOUT
+        delivered = False
 
         while time.time() < complete_deadline:
             if session.status == "cancelled":
                 proc.kill()
                 return
             if proc.poll() is not None:
-                break  # process exited
+                break  # rclone exited (success or error)
+            if not delivered and session.verification_input:
+                code = session.verification_input
+                try:
+                    await _deliver_code_to_rclone(state, code)
+                    delivered = True
+                    log.info("GDrive %s: delivered code to rclone callback", session.session_id)
+                except Exception as exc:
+                    log.warning("GDrive %s: delivery failed: %s", session.session_id, exc)
+                    session.verification_input = None
             await asyncio.sleep(1)
         else:
             session.status = "failed"
-            session.error = "Timed out waiting for Google sign-in."
+            session.error = (
+                "Timed out waiting for paste. Click Cancel and try again."
+                if not delivered
+                else "Timed out after delivering the code to rclone."
+            )
             proc.kill()
             return
 

@@ -356,7 +356,7 @@ function AddRemoteFlow({
             </span>
             <p className="text-xs text-[var(--text-primary)] pt-0.5">
               Sign in and approve access. Your browser will show an{" "}
-              <span className="text-amber-500 font-medium">error page — that&apos;s expected</span> because another app is using port 53682.
+              <span className="text-amber-500 font-medium">error page — that&apos;s expected</span>. The auth callback runs inside the workspace, not your browser.
             </p>
           </li>
 
@@ -405,10 +405,11 @@ function AddRemoteFlow({
         {showDeployNote && (
           <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)] p-3 text-[11px] text-[var(--text-secondary)] space-y-1.5">
             <p>
-              Microsoft redirects to <code>localhost:53682</code> after sign-in. Another
-              app (likely VS Code) is occupying that port, so you see a connection
-              error. The <strong>authorization code is still in the URL bar</strong> —
-              copy the full URL and paste it above.
+              Microsoft redirects to <code>127.0.0.1:53682</code>, which points to
+              your local machine — not the workspace where rclone is waiting. So
+              the browser shows a connection error. The <strong>authorization
+              code is still in the URL bar</strong>; pasting it here lets the
+              workspace deliver it to rclone locally.
             </p>
           </div>
         )}
