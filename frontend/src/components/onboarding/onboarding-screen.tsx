@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -324,11 +325,31 @@ function GatewayRestartNotice() {
 
 function ModelsStep({
   onNext,
+  onSkip,
 }: {
   onNext: () => void;
+  onSkip: () => void;
 }) {
   const qc = useQueryClient();
   const { setActiveProvider } = useSettingsStore();
+
+  // If OpenClaw's `.env` already has ANTHROPIC_API_KEY or OPENAI_API_KEY,
+  // let the user skip this step instead of forcing a re-entry.
+  const { data: envSecrets } = useQuery({
+    queryKey: ["secrets-env"],
+    queryFn: () =>
+      api.get<{ entries: { key: string; value: string }[] }>(API.SECRETS.ENV),
+    staleTime: 30_000,
+  });
+
+  const detectedEnvKey = useMemo<"ANTHROPIC_API_KEY" | "OPENAI_API_KEY" | null>(() => {
+    const entries = envSecrets?.entries ?? [];
+    const has = (key: string) =>
+      entries.some((e) => e.key === key && (e.value ?? "").trim().length > 0);
+    if (has("ANTHROPIC_API_KEY")) return "ANTHROPIC_API_KEY";
+    if (has("OPENAI_API_KEY")) return "OPENAI_API_KEY";
+    return null;
+  }, [envSecrets]);
 
   const [selected, setSelected] = useState<ModelProvider>("anthropic");
 
@@ -529,7 +550,20 @@ const saveEnvVar = async () => {
         Connect a provider to power your assistant.
       </p>
 
-      <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1 -mr-1">
+      {detectedEnvKey && (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 py-2">
+          <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--color-success)]" />
+          <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
+            <span className="font-mono font-medium text-[var(--text-primary)]">
+              {detectedEnvKey}
+            </span>{" "}
+            is already set in your OpenClaw environment. You can skip this step
+            or add another provider below.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-2">
         {/* Anthropic */}
         <ProviderOption
           selected={selected === "anthropic"}
@@ -807,6 +841,14 @@ const saveEnvVar = async () => {
         Continue
         <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
+      {detectedEnvKey && !canContinue && (
+        <button
+          onClick={onSkip}
+          className="mt-3 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+        >
+          Skip, I already have a key
+        </button>
+      )}
     </div>
   );
 }
@@ -997,7 +1039,7 @@ function ChannelsStep({
         Bring your AI assistant to the apps your team already uses.
       </p>
 
-      <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1 -mr-1">
+      <div className="space-y-2">
         {PLATFORMS.filter((p) => !p.hidden).map((platform) => (
           <ChannelRow
             key={platform.id}
@@ -1168,6 +1210,16 @@ export function OnboardingScreen() {
   const [personalityContent, setPersonalityContent] =
     useState<PersonalityContent | null>(null);
 
+  // Lock body scroll while the onboarding overlay is mounted so overscroll
+  // bounce can't reveal the chat shell rendered underneath by (main)/layout.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
   const goTo = (next: Step, dir = 1) => {
     setDirection(dir);
     setStep(next);
@@ -1193,8 +1245,14 @@ export function OnboardingScreen() {
     router.push("/c/new");
   };
 
-  return (
-    <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center bg-[var(--surface-primary)]">
+  // Portal to document.body so the overlay escapes (main)/layout's
+  // <motion.main> transform — a transformed ancestor would otherwise
+  // become the containing block for `position: fixed`, leaving the
+  // sidebar-width strip on the left uncovered.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] overflow-y-auto overscroll-contain scrollbar-none bg-[var(--surface-primary)]">
+      <div className="min-h-full flex flex-col items-center justify-center py-8">
       {/* Logo */}
       <div className="mb-6 flex flex-col items-center">
         <img src="/favicon.svg" width={40} height={40} alt="XO-Cowork" className="mb-3" />
@@ -1253,7 +1311,7 @@ export function OnboardingScreen() {
               exit="exit"
               transition={transition}
             >
-              <ModelsStep onNext={goNext} />
+              <ModelsStep onNext={goNext} onSkip={goNext} />
             </motion.div>
           )}
 
@@ -1305,6 +1363,8 @@ export function OnboardingScreen() {
           )}
         </AnimatePresence>
       </motion.div>
-    </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
