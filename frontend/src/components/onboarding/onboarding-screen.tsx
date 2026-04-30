@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSettingsStore } from "@/stores/settings-store";
 import { api, ApiError } from "@/lib/api";
-import { API, IS_DESKTOP, XO_COWORK_API_BASE, queryKeys } from "@/lib/constants";
+import { API, IS_DESKTOP, resolveCoworkApiUrl, queryKeys } from "@/lib/constants";
 import { desktopAPI } from "@/lib/tauri-api";
 import { consumeCodexSetupStream } from "@/lib/codex-device-auth";
 import {
@@ -416,7 +416,7 @@ function ModelsStep({
     codexAbortRef.current = ctrl;
 
     try {
-      const url = `${XO_COWORK_API_BASE}${API.CODEX.SETUP}`;
+      const url = resolveCoworkApiUrl(API.CODEX.SETUP);
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
