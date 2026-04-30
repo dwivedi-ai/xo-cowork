@@ -10,8 +10,34 @@ class ApiError extends Error {
     public statusText: string,
     public body: unknown,
   ) {
-    super(`API ${status}: ${statusText}`);
+    super(ApiError.formatMessage(status, statusText, body));
     this.name = "ApiError";
+  }
+
+  private static formatMessage(
+    status: number,
+    statusText: string,
+    body: unknown,
+  ): string {
+    // FastAPI puts validation/business errors in `detail`. Surface them so
+    // users see "Name must be 1-32 chars…" instead of a useless "API 400:".
+    let detail: string | undefined;
+    if (body && typeof body === "object") {
+      const d = (body as { detail?: unknown }).detail;
+      if (typeof d === "string") detail = d;
+      else if (Array.isArray(d) && d.length > 0) {
+        const first = d[0];
+        if (first && typeof first === "object" && typeof (first as { msg?: unknown }).msg === "string") {
+          detail = (first as { msg: string }).msg;
+        }
+      } else if (d && typeof d === "object" && typeof (d as { error?: unknown }).error === "string") {
+        detail = (d as { error: string }).error;
+      }
+    } else if (typeof body === "string" && body.trim()) {
+      detail = body.trim();
+    }
+    if (detail) return detail;
+    return statusText ? `API ${status}: ${statusText}` : `API ${status}`;
   }
 }
 

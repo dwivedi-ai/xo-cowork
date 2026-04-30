@@ -2,15 +2,19 @@
 Vercel connector — OAuth 2.1 with PKCE (no env vars).
 
 Uses Vercel's dynamic client registration + PKCE flow:
-  1. Register a client dynamically (one-time, stored in mcp-tokens.json)
+  1. Register a client dynamically (cached in mcp-tokens.json, re-registered
+     when the desired redirect URI changes)
   2. Generate PKCE code_verifier + S256 challenge
-  3. Start a local callback server on a free port
-  4. Open browser to Vercel's authorization endpoint
-  5. Receive callback with auth code
-  6. Exchange code for access_token + refresh_token
-  7. Store tokens in mcp-tokens.json
+  3. Send the user to Vercel's authorization endpoint
+  4. Receive callback with auth code via either:
+       (a) the workspace's public Coder URL (BRIDGE_PUBLIC_URL set) →
+           handled by routes/vercel.py:vercel_oauth_callback, OR
+       (b) a local 127.0.0.1 HTTP server (laptop fallback when no public URL)
+  5. Exchange code for access_token + refresh_token
+  6. Store tokens in mcp-tokens.json
 
-No client_secret needed. No environment variables.
+No client_secret needed. No environment variables required when running
+inside a Coder workspace (we read VSCODE_PROXY_URI for the public URL).
 """
 
 import asyncio
@@ -31,6 +35,8 @@ from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, parse_qs
 
 import httpx
+
+from config import BRIDGE_PUBLIC_URL
 
 log = logging.getLogger(__name__)
 
@@ -98,18 +104,34 @@ def delete_vercel_token() -> None:
     log.info("Vercel token removed from %s", TOKEN_FILE)
 
 
-def _get_or_register_client() -> dict[str, str]:
-    """Get or create a dynamic OAuth client registration."""
+def _get_or_register_client(desired_redirect_uri: str) -> dict[str, Any]:
+    """
+    Get or create a dynamic OAuth client registration.
+
+    Vercel performs *exact-match* validation of `redirect_uri` against the
+    registered `redirect_uris` for non-loopback URIs (loopback URIs use
+    port-wildcard matching per RFC 8252). So when the desired redirect URI
+    isn't already in the cached registration, we wipe and re-register.
+    """
     data = _read_tokens()
-    client = data.get("vercel_client")
-    if client and client.get("client_id"):
+    client = data.get("vercel_client") or {}
+    cached_uris = set(client.get("redirect_uris") or [])
+    if (
+        client.get("client_id")
+        and (desired_redirect_uri in cached_uris or _is_loopback_wildcard(cached_uris))
+    ):
         return client
 
-    # Register a new client dynamically
-    log.info("Registering new OAuth client with Vercel...")
+    if client.get("client_id"):
+        log.info(
+            "Vercel: cached client redirect_uris=%s does not include %s — re-registering",
+            sorted(cached_uris), desired_redirect_uri,
+        )
+
+    log.info("Registering new OAuth client with Vercel (redirect_uri=%s)", desired_redirect_uri)
     resp = httpx.post(VERCEL_REGISTER_URL, json={
         "client_name": "xo-cowork",
-        "redirect_uris": ["http://127.0.0.1:0/callback"],
+        "redirect_uris": [desired_redirect_uri],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
@@ -125,6 +147,15 @@ def _get_or_register_client() -> dict[str, str]:
     return client
 
 
+def _is_loopback_wildcard(uris: set[str]) -> bool:
+    """
+    True if the cached registration is the legacy loopback placeholder
+    (`http://127.0.0.1:0/callback`) — Vercel's MCP registration treats this
+    as port-wildcard, so any 127.0.0.1:<port>/callback is valid.
+    """
+    return any(u == "http://127.0.0.1:0/callback" for u in uris)
+
+
 # ---------------------------------------------------------------------------
 # PKCE helpers
 # ---------------------------------------------------------------------------
@@ -138,51 +169,80 @@ def _generate_pkce() -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Local callback server
+# Callback handlers (public bridge route + legacy local-loopback fallback)
 # ---------------------------------------------------------------------------
 
-class _CallbackHandler(BaseHTTPRequestHandler):
-    """Handles the OAuth redirect callback."""
+# Maps OAuth `state` → session_id, populated when a session enters the
+# awaiting_oauth phase. Used by both the public bridge route and the legacy
+# local HTTP handler to find which VercelSession a callback belongs to.
+_state_to_session: dict[str, str] = {}
 
-    auth_code: str | None = None
-    error: str | None = None
+
+def render_callback_page(success: bool, message: str = "") -> str:
+    """HTML returned to the user's browser after Vercel redirects back."""
+    if success:
+        return """<!doctype html>
+<html><body style="font-family:system-ui;display:flex;align-items:center;
+justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff;">
+<div style="text-align:center">
+<h1 style="color:#00dc82">&#10003; Connected to Vercel!</h1>
+<p style="color:#888">You can close this tab and return to xo-cowork.</p>
+<script>setTimeout(() => { try { window.close(); } catch (e) {} }, 1500);</script>
+</div></body></html>"""
+    safe = (message or "Authorization failed.").replace("<", "&lt;").replace(">", "&gt;")
+    return f"""<!doctype html>
+<html><body style="font-family:system-ui;display:flex;align-items:center;
+justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff;">
+<div style="text-align:center">
+<h1 style="color:#ef4444">Authorization Failed</h1>
+<p style="color:#888">{safe}</p>
+</div></body></html>"""
+
+
+def deliver_callback(state: str, code: str | None, error: str | None) -> bool:
+    """
+    Resolve `state` → session and store the callback result on it.
+    Returns True if a session was found and updated.
+    """
+    sid = _state_to_session.get(state)
+    if not sid:
+        return False
+    session = _sessions.get(sid)
+    if not session:
+        return False
+    if error:
+        session.oauth_error = error
+    elif code:
+        session.auth_code = code
+    return True
+
+
+class _CallbackHandler(BaseHTTPRequestHandler):
+    """Local 127.0.0.1 OAuth callback (laptop fallback when BRIDGE_PUBLIC_URL is unset)."""
 
     def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
+        state = (params.get("state") or [""])[0]
+        code = (params.get("code") or [None])[0]
+        err = (params.get("error_description") or params.get("error") or [None])[0]
 
-        if "code" in params:
-            _CallbackHandler.auth_code = params["code"][0]
-            self.send_response(200)
+        if code or err:
+            found = deliver_callback(state, code, err)
+            self.send_response(200 if (code and found) else 400)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(b"""
-                <html><body style="font-family:system-ui;display:flex;align-items:center;
-                justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff;">
-                <div style="text-align:center">
-                <h1 style="color:#00dc82">&#10003; Connected to Vercel!</h1>
-                <p style="color:#888">You can close this tab and return to xo-cowork.</p>
-                </div></body></html>
-            """)
-        elif "error" in params:
-            _CallbackHandler.error = params.get("error_description", params["error"])[0]
-            self.send_response(400)
-            self.send_header("Content-Type", "text/html")
-            self.end_headers()
-            self.wfile.write(f"""
-                <html><body style="font-family:system-ui;display:flex;align-items:center;
-                justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff;">
-                <div style="text-align:center">
-                <h1 style="color:#ef4444">Authorization Failed</h1>
-                <p style="color:#888">{_CallbackHandler.error}</p>
-                </div></body></html>
-            """.encode())
+            if not found:
+                self.wfile.write(render_callback_page(
+                    False, "Session not found or expired."
+                ).encode())
+            else:
+                self.wfile.write(render_callback_page(bool(code), err or "").encode())
         else:
             self.send_response(404)
             self.end_headers()
 
     def log_message(self, format, *args):
-        # Suppress default HTTP server logging
         pass
 
 
@@ -201,6 +261,20 @@ class VercelSession:
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
+    # Set by POST /sessions/{id}/submit when user pastes the redirect URL.
+    # Only consulted by the laptop-fallback flow; the public-URL flow ignores it.
+    verification_input: str | None = None
+    # True when the user must manually paste the redirect URL. False when the
+    # bridge has a publicly-reachable callback URL (BRIDGE_PUBLIC_URL set), in
+    # which case Vercel redirects the user's browser straight back to us.
+    needs_manual_code: bool = field(default_factory=lambda: not bool(BRIDGE_PUBLIC_URL))
+    # OAuth state token (32 random bytes); also used as the lookup key in
+    # `_state_to_session` so an incoming callback can find this session.
+    oauth_state: str | None = None
+    # Populated by the callback (either via the bridge route or the local
+    # _CallbackHandler) when it lands. Drained by _run_oauth_flow's wait loop.
+    auth_code: str | None = None
+    oauth_error: str | None = None
 
 
 _sessions: dict[str, VercelSession] = {}
@@ -223,6 +297,8 @@ def _expire_sessions() -> None:
         s = _sessions.pop(sid)
         if s.task and not s.task.done():
             s.task.cancel()
+        if s.oauth_state:
+            _state_to_session.pop(s.oauth_state, None)
 
 
 # ---------------------------------------------------------------------------
@@ -302,36 +378,80 @@ async def get_status() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 async def _run_oauth_flow(session: VercelSession) -> None:
-    """Run the full OAuth 2.1 + PKCE flow."""
-    server: HTTPServer | None = None
-    try:
-        # ── 1. Get or register client ────────────────────────────────
-        client_info = _get_or_register_client()
-        client_id = client_info["client_id"]
+    """
+    Run the full OAuth 2.1 + PKCE flow.
 
-        # ── 2. Generate PKCE ─────────────────────────────────────────
+    Two callback paths are supported, picked based on BRIDGE_PUBLIC_URL:
+
+      * Public URL set (typical Coder workspace):
+        redirect_uri = <BRIDGE_PUBLIC_URL>/api/connectors/vercel/oauth-callback
+        Vercel redirects the user's browser straight back to the bridge route
+        (auth-walled by Coder, but the user's session cookie passes through).
+        No local HTTP server is needed.
+
+      * No public URL (laptop dev):
+        redirect_uri = http://127.0.0.1:<CALLBACK_PORT>/callback
+        We bind a local HTTPServer on that port; the manual-paste fallback
+        delivers the code locally if the browser can't reach it.
+    """
+    server: HTTPServer | None = None
+    state: str | None = None
+    redirect_uri: str | None = None
+    try:
+        # ── 1. Generate PKCE + state ─────────────────────────────────
         code_verifier, code_challenge = _generate_pkce()
         state = secrets.token_urlsafe(32)
 
-        # ── 3. Start local callback server on a free port ────────────
-        _CallbackHandler.auth_code = None
-        _CallbackHandler.error = None
+        # ── 2. Pick the redirect URI strategy ────────────────────────
+        # Try the public URL first if available. If Vercel rejects the
+        # registration (its dynamic-client allowlist may not include our
+        # workspace's domain), gracefully fall back to local loopback +
+        # manual paste — same behavior as a laptop dev environment.
+        use_public = bool(BRIDGE_PUBLIC_URL)
+        client_info: dict[str, Any] | None = None
+        if use_public:
+            redirect_uri = f"{BRIDGE_PUBLIC_URL}/api/connectors/vercel/oauth-callback"
+            log.info(
+                "Vercel %s: trying public callback %s",
+                session.session_id, redirect_uri,
+            )
+            try:
+                client_info = _get_or_register_client(redirect_uri)
+            except RuntimeError as exc:
+                msg = str(exc)
+                if "invalid_redirect_uri" in msg or "not approved" in msg:
+                    log.warning(
+                        "Vercel %s: public redirect URI rejected by Vercel's allowlist; "
+                        "falling back to local 127.0.0.1 callback + manual paste.",
+                        session.session_id,
+                    )
+                    # Drop the failed-registration cache so we start clean for loopback
+                    data = _read_tokens()
+                    data.pop("vercel_client", None)
+                    _write_tokens(data)
+                    use_public = False
+                    client_info = None
+                else:
+                    raise
 
-        server = HTTPServer(("127.0.0.1", CALLBACK_PORT), _CallbackHandler)
-        port = server.server_address[1]
-        redirect_uri = f"http://127.0.0.1:{port}/callback"
+        if not use_public:
+            server = HTTPServer(("127.0.0.1", CALLBACK_PORT), _CallbackHandler)
+            local_port = server.server_address[1]
+            redirect_uri = f"http://127.0.0.1:{local_port}/callback"
+            server_thread = Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+            log.info(
+                "Vercel %s: started local callback server on :%d",
+                session.session_id, local_port,
+            )
+            client_info = _get_or_register_client(redirect_uri)
 
-        # Update client registration with the actual redirect URI
-        client_info_data = _read_tokens()
-        if "vercel_client" in client_info_data:
-            client_info_data["vercel_client"]["redirect_uris"] = [redirect_uri]
-            _write_tokens(client_info_data)
+        client_id = client_info["client_id"]
 
-        server_thread = Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        log.info("Vercel OAuth callback server started on port %d", port)
+        # ── 4. Register state→session BEFORE building auth URL ────────
+        _state_to_session[state] = session.session_id
 
-        # ── 4. Build authorization URL ───────────────────────────────
+        # ── 5. Build authorization URL ───────────────────────────────
         auth_params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -343,31 +463,68 @@ async def _run_oauth_flow(session: VercelSession) -> None:
         auth_url = f"{VERCEL_AUTHORIZE_URL}?{urlencode(auth_params)}"
 
         session.auth_url = auth_url
+        session.oauth_state = state
+        session.needs_manual_code = not use_public  # reflects the path actually chosen
         session.status = "awaiting_oauth"
-        log.info("Vercel %s: auth URL ready: %s", session.session_id, auth_url[:80])
+        log.info(
+            "Vercel %s: auth URL ready (public=%s): %s",
+            session.session_id, use_public, auth_url[:80],
+        )
 
-        # ── 5. Wait for callback ─────────────────────────────────────
+        # ── 6. Wait for callback (any path: bridge route, local server, or paste) ─
         deadline = time.time() + OAUTH_TIMEOUT
+        delivered = False
         while time.time() < deadline:
             if session.status == "cancelled":
                 return
-            if _CallbackHandler.auth_code or _CallbackHandler.error:
+            if session.auth_code or session.oauth_error:
                 break
+            # Laptop-fallback: paste delivers code to our own local server
+            if (
+                not use_public
+                and not delivered
+                and session.verification_input
+                and server is not None
+            ):
+                code = session.verification_input
+                try:
+                    local_port = server.server_address[1]
+                    async with httpx.AsyncClient(timeout=15) as http:
+                        await http.get(
+                            f"http://127.0.0.1:{local_port}/callback",
+                            params={"code": code, "state": state},
+                        )
+                    delivered = True
+                    log.info(
+                        "Vercel %s: delivered pasted code to local callback",
+                        session.session_id,
+                    )
+                except Exception as exc:
+                    log.warning("Vercel %s: delivery failed: %s", session.session_id, exc)
+                    session.verification_input = None  # let user retry
             await asyncio.sleep(0.5)
         else:
             session.status = "failed"
-            session.error = "Timed out waiting for Vercel authorization."
+            session.error = (
+                "Timed out waiting for Vercel sign-in."
+                if use_public
+                else (
+                    "Timed out waiting for paste. Click Cancel and try again."
+                    if not delivered
+                    else "Timed out after delivering the code."
+                )
+            )
             return
 
-        if _CallbackHandler.error:
+        if session.oauth_error:
             session.status = "failed"
-            session.error = f"Vercel denied access: {_CallbackHandler.error}"
+            session.error = f"Vercel denied access: {session.oauth_error}"
             return
 
-        auth_code = _CallbackHandler.auth_code
+        auth_code = session.auth_code
         log.info("Vercel %s: received auth code", session.session_id)
 
-        # ── 6. Exchange code for tokens ──────────────────────────────
+        # ── 7. Exchange code for tokens ──────────────────────────────
         async with httpx.AsyncClient(timeout=15) as http:
             token_resp = await http.post(
                 VERCEL_TOKEN_URL,
@@ -428,6 +585,8 @@ async def _run_oauth_flow(session: VercelSession) -> None:
     finally:
         if server:
             server.shutdown()
+        if state:
+            _state_to_session.pop(state, None)
 
 
 # ---------------------------------------------------------------------------
@@ -455,4 +614,6 @@ async def cancel_session(session_id: str) -> None:
     session.status = "cancelled"
     if session.task and not session.task.done():
         session.task.cancel()
+    if session.oauth_state:
+        _state_to_session.pop(session.oauth_state, None)
     _sessions.pop(session_id, None)

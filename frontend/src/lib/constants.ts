@@ -329,6 +329,7 @@ export const API = {
     CONNECT: "/api/connectors/vercel/connect",
     SESSION: (id: string) => `/api/connectors/vercel/sessions/${id}` as const,
     CANCEL_SESSION: (id: string) => `/api/connectors/vercel/sessions/${id}/cancel` as const,
+    SUBMIT_CODE: (id: string) => `/api/connectors/vercel/sessions/${id}/submit` as const,
     STATUS: "/api/connectors/vercel/status",
     DISCONNECT: "/api/connectors/vercel/disconnect",
     RECONNECT: "/api/connectors/vercel/reconnect",

@@ -20,6 +20,7 @@ export interface VercelStatusResponse {
 export interface VercelSessionResponse {
   status: "pending" | "awaiting_oauth" | "completed" | "failed" | "cancelled";
   auth_url?: string;
+  needs_manual_code?: boolean;
   error?: string;
 }
 
@@ -94,6 +95,14 @@ export function useVercelCancelSession() {
   return useMutation({
     mutationFn: (sessionId: string) =>
       api.post<{ ok: boolean }>(API.VERCEL.CANCEL_SESSION(sessionId)),
+  });
+}
+
+/** Submit the pasted redirect URL / code to a Vercel OAuth session. */
+export function useVercelSubmitCode() {
+  return useMutation({
+    mutationFn: ({ sessionId, code }: { sessionId: string; code: string }) =>
+      api.post<{ ok: boolean }>(API.VERCEL.SUBMIT_CODE(sessionId), { code }),
   });
 }
 

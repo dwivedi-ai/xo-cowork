@@ -10,6 +10,9 @@ import {
   RefreshCw,
   LogOut,
   Triangle,
+  Info,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +22,7 @@ import {
   useVercelDisconnect,
   useVercelReconnect,
   useVercelCancelSession,
+  useVercelSubmitCode,
 } from "@/hooks/use-vercel";
 
 // ---------------------------------------------------------------------------
@@ -47,17 +51,26 @@ function OAuthFlow({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "starting" | "waiting" | "completed" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [pastedUrl, setPastedUrl] = useState("");
+  const [showDeployNote, setShowDeployNote] = useState(false);
+  const openedAuthRef = useRef(false);
 
   const connectMutation = useVercelConnect();
   const cancelSession = useVercelCancelSession();
+  const submitCode = useVercelSubmitCode();
   const { data: sessionData } = useVercelSession(sessionId);
 
   // React to session poll updates
   useEffect(() => {
     if (!sessionData) return;
     if (sessionData.status === "awaiting_oauth" && sessionData.auth_url) {
-      // Open the auth URL in the browser
-      window.open(sessionData.auth_url, "_blank", "noopener");
+      setAuthUrl(sessionData.auth_url);
+      // Auto-open the auth URL once per session
+      if (!openedAuthRef.current) {
+        openedAuthRef.current = true;
+        window.open(sessionData.auth_url, "_blank", "noopener");
+      }
       setPhase("waiting");
     } else if (sessionData.status === "completed") {
       setPhase("completed");
@@ -91,6 +104,21 @@ function OAuthFlow({
     setPhase("idle");
     setSessionId(null);
     setErrorMsg("");
+    setAuthUrl(null);
+    setPastedUrl("");
+    openedAuthRef.current = false;
+  };
+
+  const handleSubmitCode = async () => {
+    if (!pastedUrl.trim() || !sessionId) return;
+    try {
+      await submitCode.mutateAsync({ sessionId, code: pastedUrl.trim() });
+      setPastedUrl("");
+      // Session poll will detect completion / failure
+    } catch (err: unknown) {
+      setPhase("error");
+      setErrorMsg(err instanceof Error ? err.message : "Failed to submit code.");
+    }
   };
 
   if (phase === "idle" || phase === "starting") {
@@ -132,13 +160,95 @@ function OAuthFlow({
   if (phase === "waiting") {
     return (
       <div className="space-y-4">
-        <div className="flex flex-col items-center gap-3 py-6">
-          <Loader2 className="h-6 w-6 animate-spin text-[var(--text-tertiary)]" />
-          <p className="text-sm text-[var(--text-secondary)]">Waiting for Vercel authorization…</p>
-          <p className="text-[11px] text-[var(--text-tertiary)] text-center">
-            Complete the sign-in in your browser. This page will update automatically.
-          </p>
-        </div>
+        <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+          Authorize Vercel
+        </h3>
+
+        <ol className="space-y-3">
+          {/* Step 1 */}
+          <li className="flex gap-3">
+            <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+              1
+            </span>
+            <div className="flex-1 space-y-1.5">
+              <p className="text-xs text-[var(--text-primary)]">Open Vercel sign-in</p>
+              <Button
+                size="sm" className="h-8 text-xs"
+                onClick={() => authUrl && window.open(authUrl, "_blank", "noopener")}
+                disabled={!authUrl}
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                Open Vercel sign-in
+              </Button>
+            </div>
+          </li>
+
+          {/* Step 2 */}
+          <li className="flex gap-3">
+            <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+              2
+            </span>
+            <p className="text-xs text-[var(--text-primary)] pt-0.5">
+              Sign in and approve access. Your browser will show an{" "}
+              <span className="text-amber-500 font-medium">error page — that&apos;s expected</span>. The auth callback runs inside the workspace, not your browser.
+            </p>
+          </li>
+
+          {/* Step 3 */}
+          <li className="flex gap-3">
+            <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+              3
+            </span>
+            <div className="flex-1 space-y-1.5">
+              <p className="text-xs text-[var(--text-primary)]">
+                Copy the <strong>full URL</strong> from your browser&apos;s address bar{" "}
+                <span className="text-[var(--text-tertiary)]">(starts with http://127.0.0.1:53683/callback?code=…)</span>
+                {" "}and paste it below.
+              </p>
+              <textarea
+                value={pastedUrl}
+                onChange={(e) => setPastedUrl(e.target.value)}
+                placeholder="http://127.0.0.1:53683/callback?code=…&state=…"
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/40 focus:border-[var(--brand-primary)] resize-none transition-all font-mono"
+              />
+              <Button
+                className="w-full" size="sm"
+                disabled={!pastedUrl.trim() || submitCode.isPending}
+                onClick={handleSubmitCode}
+              >
+                {submitCode.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Submit
+              </Button>
+            </div>
+          </li>
+        </ol>
+
+        <button
+          type="button"
+          className="flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+          onClick={() => setShowDeployNote((v) => !v)}
+        >
+          <Info className="h-3 w-3" />
+          Why does the page show an error?
+          {showDeployNote ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </button>
+        {showDeployNote && (
+          <div className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)] p-3 text-[11px] text-[var(--text-secondary)] space-y-1.5">
+            <p>
+              Vercel redirects to <code>127.0.0.1:53683</code>, which points to
+              your local machine — not the workspace where the callback listener
+              is waiting. So the browser shows a connection error. The{" "}
+              <strong>authorization code is still in the URL bar</strong>;
+              pasting it here lets the workspace deliver it locally.
+            </p>
+          </div>
+        )}
+
         <Button
           variant="ghost"
           size="sm"
