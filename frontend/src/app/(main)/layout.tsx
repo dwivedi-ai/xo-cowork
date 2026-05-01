@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { XoCoworkLogo } from "@/components/ui/xo-cowork-logo";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSidebarStore } from "@/stores/sidebar-store";
-import { useAuthStore } from "@/stores/auth-store";
 import { OnboardingGate } from "@/components/onboarding/onboarding-gate";
 import { useAutoDetectProvider } from "@/hooks/use-auto-detect-provider";
 import { useActivityStore } from "@/stores/activity-store";
