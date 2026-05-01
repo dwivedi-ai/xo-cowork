@@ -326,13 +326,12 @@ export const API = {
     RECONNECT: "/api/connectors/github/reconnect",
   },
   VERCEL: {
-    CONNECT: "/api/connectors/vercel/connect",
-    SESSION: (id: string) => `/api/connectors/vercel/sessions/${id}` as const,
-    CANCEL_SESSION: (id: string) => `/api/connectors/vercel/sessions/${id}/cancel` as const,
-    SUBMIT_CODE: (id: string) => `/api/connectors/vercel/sessions/${id}/submit` as const,
+    TOKEN: "/api/connectors/vercel/token",
     STATUS: "/api/connectors/vercel/status",
     DISCONNECT: "/api/connectors/vercel/disconnect",
     RECONNECT: "/api/connectors/vercel/reconnect",
+    OAUTH_START: "/api/connectors/vercel/oauth/start",
+    OAUTH_EXCHANGE: "/api/connectors/vercel/oauth/exchange",
   },
   MANUS: {
     STATUS: "/api/connectors/manus/status",
