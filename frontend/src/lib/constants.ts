@@ -178,6 +178,7 @@ export const API = {
   },
   SECRETS: {
     ENV: "/api/secrets/env",
+    ENV_KEYS: "/api/secrets/env/keys",
   },
   USAGE: "/api/usage",
   CONFIG: {
@@ -288,6 +289,10 @@ export const API = {
   GATEWAY: {
     RESTART: "/gateway/restart",
   },
+  ONBOARDING: {
+    STATUS: "/api/onboarding",
+    COMPLETE: "/api/onboarding/complete",
+  },
   REMOTE: {
     ENABLE: "/api/remote/enable",
     DISABLE: "/api/remote/disable",
@@ -325,6 +330,7 @@ export const queryKeys = {
   connectors: ["connectors"] as const,
   channels: ["channels"] as const,
   openclawStatus: ["openclawStatus"] as const,
+  onboardingStatus: ["onboardingStatus"] as const,
   codexStatus: ["codexStatus"] as const,
   plugins: {
     all: ["plugins"] as const,

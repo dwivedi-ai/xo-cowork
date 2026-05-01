@@ -334,21 +334,22 @@ function ModelsStep({
 
   // If OpenClaw's `.env` already has ANTHROPIC_API_KEY or OPENAI_API_KEY,
   // let the user skip this step instead of forcing a re-entry.
-  const { data: envSecrets } = useQuery({
-    queryKey: ["secrets-env"],
-    queryFn: () =>
-      api.get<{ entries: { key: string; value: string }[] }>(API.SECRETS.ENV),
+  // Reads only the keys (no plaintext values cross the wire) and is
+  // prefetched at OnboardingScreen mount, so the cache is hot by the
+  // time this step renders.
+  const { data: envKeysData } = useQuery({
+    queryKey: ["secrets-env-keys"],
+    queryFn: () => api.get<{ keys: string[] }>(API.SECRETS.ENV_KEYS),
     staleTime: 30_000,
   });
 
-  const detectedEnvKey = useMemo<"ANTHROPIC_API_KEY" | "OPENAI_API_KEY" | null>(() => {
-    const entries = envSecrets?.entries ?? [];
-    const has = (key: string) =>
-      entries.some((e) => e.key === key && (e.value ?? "").trim().length > 0);
-    if (has("ANTHROPIC_API_KEY")) return "ANTHROPIC_API_KEY";
-    if (has("OPENAI_API_KEY")) return "OPENAI_API_KEY";
-    return null;
-  }, [envSecrets]);
+  const detectedEnvKeys = useMemo<("ANTHROPIC_API_KEY" | "OPENAI_API_KEY")[]>(() => {
+    const keys = envKeysData?.keys ?? [];
+    const detected: ("ANTHROPIC_API_KEY" | "OPENAI_API_KEY")[] = [];
+    if (keys.includes("ANTHROPIC_API_KEY")) detected.push("ANTHROPIC_API_KEY");
+    if (keys.includes("OPENAI_API_KEY")) detected.push("OPENAI_API_KEY");
+    return detected;
+  }, [envKeysData]);
 
   const [selected, setSelected] = useState<ModelProvider>("anthropic");
 
@@ -549,15 +550,18 @@ const saveEnvVar = async () => {
         Connect a provider to power your assistant.
       </p>
 
-      {detectedEnvKey && (
+      {detectedEnvKeys.length > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 py-2">
           <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--color-success)]" />
           <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
-            <span className="font-mono font-medium text-[var(--text-primary)]">
-              {detectedEnvKey}
-            </span>{" "}
-            is already set in your OpenClaw environment. You can skip this step
-            or add another provider below.
+            {detectedEnvKeys.map((k, i) => (
+              <span key={k}>
+                {i > 0 && (i === detectedEnvKeys.length - 1 ? " and " : ", ")}
+                <span className="font-mono font-medium text-[var(--text-primary)]">{k}</span>
+              </span>
+            ))}{" "}
+            {detectedEnvKeys.length > 1 ? "are" : "is"} already set in your OpenClaw
+            environment. You can skip this step or pick a different provider below.
           </p>
         </div>
       )}
@@ -840,7 +844,7 @@ const saveEnvVar = async () => {
         Continue
         <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
-      {detectedEnvKey && !canContinue && (
+      {detectedEnvKeys.length > 0 && !canContinue && (
         <button
           onClick={onSkip}
           className="mt-3 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
@@ -1203,6 +1207,16 @@ export function OnboardingScreen() {
   const router = useRouter();
   const completeOnboarding = useSettingsStore((s) => s.completeOnboarding);
   const setCompanyName = useSettingsStore((s) => s.setCompanyName);
+
+  // Prefetch the env-keys list at mount so by the time the user reaches
+  // the Models step, the "ANTHROPIC_API_KEY is already set" banner
+  // appears with no perceptible delay. ModelsStep reads from this same
+  // cached query.
+  useQuery({
+    queryKey: ["secrets-env-keys"],
+    queryFn: () => api.get<{ keys: string[] }>(API.SECRETS.ENV_KEYS),
+    staleTime: 30_000,
+  });
 
   const [step, setStep] = useState<Step>("company");
   const [direction, setDirection] = useState(1);
