@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2, Download, Play, Square, RotateCw, RefreshCw, Eye, EyeOff, ExternalLink, Unplug } from "lucide-react";
+import { Loader2, Download, Play, RotateCw, RefreshCw, Eye, EyeOff, ExternalLink, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import {
   useChannels,
   useOpenClawStatus,
   useOpenClawStart,
-  useOpenClawStop,
   useAddChannel,
   useRemoveChannel,
 } from "@/hooks/use-channels";
@@ -34,7 +33,7 @@ export function RemoteTabContent() {
 
 const PLATFORMS: PlatformDef[] = [
   { id: "whatsapp", name: "WhatsApp", icon: <WhatsAppIcon size={18} />, color: "text-[#25D366]", auth: "qr",
-    help: "Scan QR code with your phone to link WhatsApp" },
+    help: "Scan QR code with your phone to link WhatsApp", hidden: true },
   { id: "discord", name: "Discord", icon: <DiscordIcon size={18} />, color: "text-[#5865F2]", auth: "token",
     help: "Create a bot at Discord Developer Portal",
     helpUrl: "https://discord.com/developers/applications",
@@ -57,7 +56,6 @@ function OpenClawSection() {
   const { data: clawStatus, refetch: refetchClaw } = useOpenClawStatus();
   const { data: channelsData, refetch: refetchChannels } = useChannels();
   const startClaw = useOpenClawStart();
-  const stopClaw = useOpenClawStop();
   const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null);
   const [gatewayRestarting, setGatewayRestarting] = useState(false);
   const [pendingRestart, setPendingRestart] = useState<Set<string>>(new Set());
@@ -141,16 +139,10 @@ function OpenClawSection() {
               </Button>
             )}
             {running && (
-              <>
-                <Button variant="outline" size="sm" className="h-7 text-[11px]"
-                  onClick={restartGateway} disabled={gatewayRestarting}>
-                  {gatewayRestarting ? <><RefreshCw className="h-3 w-3 animate-spin" />{t("gatewayRestarting")}</> : <><RefreshCw className="h-3 w-3" />{t("restartGateway")}</>}
-                </Button>
-                <Button variant="outline" size="sm" className="h-7 text-[11px]"
-                  onClick={() => stopClaw.mutate()} disabled={stopClaw.isPending}>
-                  {stopClaw.isPending ? <><Loader2 className="h-3 w-3 animate-spin" />{t("gatewayStopping")}</> : <><Square className="h-3 w-3" />{t("gatewayStop")}</>}
-                </Button>
-              </>
+              <Button variant="outline" size="sm" className="h-7 text-[11px]"
+                onClick={restartGateway} disabled={gatewayRestarting}>
+                {gatewayRestarting ? <><RefreshCw className="h-3 w-3 animate-spin" />{t("gatewayRestarting")}</> : <><RefreshCw className="h-3 w-3" />{t("restartGateway")}</>}
+              </Button>
             )}
           </div>
         </div>
@@ -171,7 +163,7 @@ function OpenClawSection() {
 
       {/* Platform cards grid */}
       <div className="grid grid-cols-2 gap-2">
-        {PLATFORMS.map((p) => {
+        {PLATFORMS.filter((p) => !p.hidden).map((p) => {
           const reportedConnected = !!channels[p.id];
           const pending = pendingRestart.has(p.id);
           const connected = reportedConnected || pending;
