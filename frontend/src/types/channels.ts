@@ -30,4 +30,5 @@ export interface PlatformDef {
   help: string;
   helpUrl?: string;
   fields?: { key: string; label: string; placeholder: string; secret?: boolean }[];
+  hidden?: boolean;
 }

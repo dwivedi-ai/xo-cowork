@@ -173,7 +173,17 @@ export const useSettingsStore = create<SettingsStore>()(
         })),
       clearAllPermissionRules: () => set({ savedPermissions: [] }),
       setWorkspaceDirectory: (dir) => set({ workspaceDirectory: dir }),
-      completeOnboarding: () => set({ hasCompletedOnboarding: true }),
+      completeOnboarding: () => {
+        set({ hasCompletedOnboarding: true });
+        // Persist on the user's machine via xo-cowork-api so onboarding
+        // does not re-trigger in a new browser / incognito / after a
+        // localStorage clear. Fire-and-forget — the localStorage flag is
+        // the fast path, the server is the durable record.
+        import("@/lib/api")
+          .then(({ api }) => import("@/lib/constants").then(({ API }) =>
+            api.post(API.ONBOARDING.COMPLETE)))
+          .catch(() => { /* non-fatal */ });
+      },
       setCompanyName: (name) => set({ companyName: name }),
       setHasSeenHints: (seen) => set({ hasSeenHints: seen }),
       setLanguage: (lang) => {
