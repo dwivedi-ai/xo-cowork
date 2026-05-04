@@ -122,7 +122,6 @@ src/
 │   │   ├── chat-textarea.tsx     #   Auto-resizing textarea
 │   │   ├── chat-actions.tsx      #   Send/Stop buttons
 │   │   ├── landing.tsx           #   New conversation landing (Hero + conversation starters)
-│   │   ├── workspace-toggle.tsx  #   Project directory picker (reads from useWorkspaceConfig)
 │   │   └── chat-footer.tsx       #   Footer disclaimer
 │   │
 │   ├── messages/                 # Message rendering
@@ -155,14 +154,13 @@ src/
 │           skeleton, separator, badge, avatar, collapsible,
 │           dropdown-menu, input, popover
 │
-├── hooks/                        # Custom hooks (29)
+├── hooks/                        # Custom hooks (28)
 │   ├── use-chat.ts               #   Core chat hook (prompt → stream → assemble)
 │   ├── use-sse.ts                #   SSE connection + event dispatch to chatStore
 │   ├── use-sessions.ts           #   TanStack Query: session CRUD
 │   ├── use-messages.ts           #   TanStack Query: message fetching
 │   ├── use-models.ts             #   TanStack Query: model list
 │   ├── use-agents.ts             #   TanStack Query: agent list
-│   ├── use-workspace-config.ts   #   Fetch workspace roots from /api/config/workspace
 │   ├── use-auto-resize.ts        #   Textarea auto-height
 │   ├── use-scroll-anchor.ts      #   Auto-scroll to bottom
 │   ├── use-mobile.ts             #   Mobile breakpoint detection
@@ -411,34 +409,6 @@ Collapsible side panel showing real-time workspace state:
 ### ActivityPanel
 
 Real-time activity tracking with timeline, thinking indicators, and summary cards for session activity.
-
-## Workspace Configuration
-
-The frontend does not hardcode workspace root paths. Instead, all components that
-need to know where projects live (`WorkspaceToggle`, `ProjectExplorer`, onboarding)
-read from the `useWorkspaceConfig` hook:
-
-```ts
-const { workspaceRoot, backend } = useWorkspaceConfig();
-```
-
-The hook calls `GET /api/config/workspace` once (`staleTime: Infinity`) and returns
-the correct root for the active backend:
-
-| Backend | Workspace root |
-|---|---|
-| `claude_code` | `~/claude-cowork` (from `config/agents/claude_code/settings.json → cowork_root`) |
-| `openclaw` | `~/.openclaw/workspace` (from agent manifest `workspace_dir`) |
-
-The active backend is determined by `agentName` in `settings-store` (set when a
-user creates or selects an agent). This means no `if/else` logic is needed in any
-component — they all read `workspaceRoot` from the hook and it's always right.
-
-The "Create agent" dialog in `AgentsExplorer` also defaults the backend toggle to
-the current `agentName` setting, so newly created agents go into the correct
-directory without requiring manual selection.
-
----
 
 ## Environment Variables
 

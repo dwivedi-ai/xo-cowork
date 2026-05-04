@@ -16,7 +16,6 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { api } from "@/lib/api";
 import { API, queryKeys } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { useWorkspaceConfig } from "@/hooks/use-workspace-config";
 
 interface WorkspaceToggleProps {
   /** When provided, workspace changes are persisted to this session via PATCH. */
@@ -39,14 +38,15 @@ interface ListDirectoryResponse {
   files: DirEntry[];
 }
 
-const SYSTEM_DIRS = new Set(["agents", "memory", "state", "projects"]);
+const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+const SYSTEM_DIRS = new Set(["memory", "state", "projects"]);
 
 function isUserProject(entry: DirEntry): boolean {
   return !entry.name.startsWith(".") && !SYSTEM_DIRS.has(entry.name);
 }
 
-function getDisplayName(path: string | null | undefined, workspaceRoot: string): string | null {
-  if (!path || path === "." || path === workspaceRoot) return null;
+function getDisplayName(path: string | null | undefined): string | null {
+  if (!path || path === "." || path === WORKSPACE_ROOT) return null;
   const normalized = path.replace(/\\/g, "/").replace(/\/$/, "");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || null;
@@ -57,7 +57,6 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
   const queryClient = useQueryClient();
   const [projects, setProjects] = useState<DirEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const { workspaceRoot } = useWorkspaceConfig();
 
   // For new chats (no sessionId), use global settings store
   const globalWorkspace = useSettingsStore((s) => s.workspaceDirectory);
@@ -65,13 +64,13 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
 
   // Resolved values depending on context
   const currentPath = sessionId ? directory : globalWorkspace;
-  const displayName = getDisplayName(currentPath, workspaceRoot);
+  const displayName = getDisplayName(currentPath);
 
   // Load user projects from workspace
   const loadProjects = useCallback(async () => {
     try {
       const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
-        path: workspaceRoot,
+        path: WORKSPACE_ROOT,
       });
       setProjects(res.dirs.filter(isUserProject));
     } catch {
@@ -79,7 +78,7 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
     } finally {
       setLoaded(true);
     }
-  }, [workspaceRoot]);
+  }, []);
 
   // Fetch projects on first open
   const handleOpenChange = useCallback(

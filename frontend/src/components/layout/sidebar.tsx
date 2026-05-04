@@ -27,15 +27,14 @@ export function Sidebar() {
       >
         <SidebarHeader />
         <SidebarNav />
-
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
           <ProjectExplorer />
           <AgentsExplorer />
-          <Suspense fallback={<div className="flex-1" />}>
+          {/* SessionList hidden temporarily for UI evaluation */}
+          {/* <Suspense fallback={null}>
             <SessionList />
-          </Suspense>
+          </Suspense> */}
         </div>
-
         <SidebarFooter />
       </motion.aside>
     </TooltipProvider>
