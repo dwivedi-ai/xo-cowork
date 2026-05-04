@@ -2,8 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { usePathname, useRouter } from "next/navigation";
-import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { AppLink as Link, useAppRouter } from "@/lib/navigation";
 import { SquarePen } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import dynamic from "next/dynamic";
@@ -52,7 +52,7 @@ function useIsDesktop() {
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation("common");
-  const router = useRouter();
+  const router = useAppRouter();
   const pathname = usePathname();
   const isCollapsed = useSidebarStore((s) => s.isCollapsed);
   const toggleSidebar = useSidebarStore((s) => s.toggle);

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { useTranslation } from 'react-i18next';
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2, Pencil, FileDown, FileText, FolderOpen, Pin, PinOff, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,7 +50,7 @@ export const SessionItem = memo(function SessionItem({
   isFocused = false,
 }: SessionItemProps) {
   const { t } = useTranslation('common');
-  const router = useRouter();
+  const router = useAppRouter();
   const queryClient = useQueryClient();
   const { prefetch, cancel } = useDebouncedPrefetch(150);
   const [editValue, setEditValue] = useState("");

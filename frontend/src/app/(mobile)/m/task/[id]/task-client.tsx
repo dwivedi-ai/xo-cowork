@@ -1,13 +1,14 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { ChatView } from "@/components/chat/chat-view";
 import { isRemoteMode } from "@/lib/remote-connection";
 import { useChatStore } from "@/stores/chat-store";
 
 function TaskClientInner({ sessionId }: { sessionId: string }) {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {

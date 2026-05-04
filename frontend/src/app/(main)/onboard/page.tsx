@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import dynamic from "next/dynamic";
 import { useSettingsStore, useSettingsHasHydrated } from "@/stores/settings-store";
 
@@ -16,7 +16,7 @@ const OnboardingScreen = dynamic(
 );
 
 export default function OnboardPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const hydrated = useSettingsHasHydrated();
   const hasCompletedOnboarding = useSettingsStore((s) => s.hasCompletedOnboarding);
 

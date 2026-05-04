@@ -9,7 +9,7 @@ import {
   Repeat,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { useAutomationRuns } from "@/hooks/use-automations";
 import { humanizeCron, humanizeSchedule, relativeTime, formatDuration, parseCron, buildCron } from "./helpers";

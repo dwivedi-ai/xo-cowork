@@ -1,7 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import {
   isRemoteMode,
   saveRemoteConfig,
@@ -114,7 +115,7 @@ async function syncProviderAndModel(): Promise<void> {
 }
 
 function MobileLayoutInner({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const [ready, setReady] = useState(false);
 

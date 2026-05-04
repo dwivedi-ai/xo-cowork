@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import {
   ArrowLeft, Camera, CheckCircle2, XCircle, Loader2,
   Wifi, WifiOff, KeyRound, Link2, Trash2, Monitor, Eye, Cpu,
@@ -26,7 +26,7 @@ import type { ModelInfo } from "@/types/model";
 import { useChannels, useOpenClawStatus } from "@/hooks/use-channels";
 
 export default function MobileSettingsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const [config, setConfig] = useState<RemoteConfig | null>(null);
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");

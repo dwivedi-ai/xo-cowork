@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { WifiOff, RefreshCw, X, QrCode } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useConnectionStore } from "@/stores/connection-store";
 import { isRemoteMode } from "@/lib/remote-connection";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 export function OfflineOverlay() {
   const status = useConnectionStore((s) => s.status);
   const [dismissed, setDismissed] = useState(false);
-  const router = useRouter();
+  const router = useAppRouter();
 
   // Only show when fully disconnected, not during brief reconnection attempts
   if (status !== "disconnected" || dismissed) return null;

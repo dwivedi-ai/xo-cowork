@@ -11,7 +11,7 @@ import {
   Timer,
   Sparkles,
 } from "lucide-react";
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import {
   AreaChart,
   Area,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -257,7 +257,7 @@ interface AgentNodeProps {
 
 function AgentNode({ name, workspacePath, sessions, activeSessionId, onSelectSession }: AgentNodeProps) {
   const { t } = useTranslation("common");
-  const router = useRouter();
+  const router = useAppRouter();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -331,7 +331,7 @@ export function AgentsExplorer() {
   const { data: sessionPages, isLoading: sessionsLoading } = useSessions();
   const createAgent = useCreateAgent();
   const activeSessionId = useActiveSessionId();
-  const router = useRouter();
+  const router = useAppRouter();
 
   const openAddDialog = useCallback(() => {
     setDisplayName("");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, FileText, Code, Eye, BookOpen, Ghost, User, Bot } from "lucide-react";
@@ -145,7 +145,7 @@ function AgentFileTabs({ files }: { files: Record<string, string | null> }) {
 
 export function AgentDetailPage({ agentId }: { agentId: string }) {
   const { t } = useTranslation("common");
-  const router = useRouter();
+  const router = useAppRouter();
   const { data, isLoading, isError, error, refetch } = useAgentDetail(agentId);
   const updateAgent = useUpdateAgent();
 
