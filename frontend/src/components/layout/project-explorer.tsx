@@ -21,7 +21,6 @@ import { api } from "@/lib/api";
 import { API } from "@/lib/constants";
 import { useArtifactStore } from "@/stores/artifact-store";
 import { artifactTypeFromExtension, languageFromExtension } from "@/lib/artifacts";
-import { useWorkspaceConfig } from "@/hooks/use-workspace-config";
 
 interface DirEntry {
   name: string;
@@ -152,8 +151,10 @@ function FileNode({ name, path, depth }: FileNodeProps) {
   );
 }
 
+const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+
 /** System/internal directories that should not appear as user projects. */
-const SYSTEM_DIRS = new Set(["memory", "state", "projects", "agents"]);
+const SYSTEM_DIRS = new Set(["memory", "state", "projects"]);
 
 /** Returns true for directories the user explicitly created (not hidden or system). */
 function isUserProject(entry: DirEntry): boolean {
@@ -168,13 +169,12 @@ export function ProjectExplorer() {
   const [folderName, setFolderName] = useState("");
   const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { workspaceRoot } = useWorkspaceConfig();
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
-        path: workspaceRoot,
+        path: WORKSPACE_ROOT,
       });
       setRootData({ dirs: res.dirs.filter(isUserProject), files: res.files });
     } catch {
@@ -182,7 +182,7 @@ export function ProjectExplorer() {
     } finally {
       setLoading(false);
     }
-  }, [workspaceRoot]);
+  }, []);
 
   const toggle = useCallback(async () => {
     if (isExpanded) {
@@ -211,7 +211,7 @@ export function ProjectExplorer() {
     if (!name) return;
     setCreating(true);
     try {
-      await api.post(API.FILES.MKDIR, { path: `${workspaceRoot}/${name}`, scaffold: true });
+      await api.post(API.FILES.MKDIR, { path: `${WORKSPACE_ROOT}/${name}`, scaffold: true });
       setAddingFolder(false);
       setFolderName("");
       await loadRoot();

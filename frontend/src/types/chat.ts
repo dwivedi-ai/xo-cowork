@@ -16,7 +16,6 @@ export interface PromptRequest {
   text: string;
   model?: string | null;
   agent?: string;
-  agent_name?: string;
   attachments?: FileAttachment[];
   permission_presets?: Record<string, boolean> | null;
   reasoning?: boolean | null;
