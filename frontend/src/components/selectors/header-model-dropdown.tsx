@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Loader2, Star } from "lucide-react";
 import { useProviderModels } from "@/hooks/use-provider-models";
@@ -69,7 +69,7 @@ const ARENA_PROVIDERS = new Set<string | null>();
 
 export function HeaderModelDropdown() {
   const { t } = useTranslation("common");
-  const router = useRouter();
+  const router = useAppRouter();
   const [open, setOpen] = useState(false);
   const { data: models, isLoading, activeProvider } = useProviderModels();
   const hasArena = ARENA_PROVIDERS.has(activeProvider);

@@ -2,7 +2,7 @@
 
 import { useTranslation } from "react-i18next";
 import { Sparkles, CreditCard, Clock } from "lucide-react";
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

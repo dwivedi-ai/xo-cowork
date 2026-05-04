@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -1084,7 +1084,7 @@ function ProjectStep({
   companyName: string;
   onFinish: () => void;
 }) {
-  const router = useRouter();
+  const router = useAppRouter();
   const completeOnboarding = useSettingsStore((s) => s.completeOnboarding);
   const setWorkspaceDirectory = useSettingsStore((s) => s.setWorkspaceDirectory);
   const [projectName, setProjectName] = useState("");
@@ -1204,7 +1204,7 @@ function Stepper({ current }: { current: Step }) {
 /* ------------------------------------------------------------------ */
 
 export function OnboardingScreen() {
-  const router = useRouter();
+  const router = useAppRouter();
   const completeOnboarding = useSettingsStore((s) => s.completeOnboarding);
   const setCompanyName = useSettingsStore((s) => s.setCompanyName);
 

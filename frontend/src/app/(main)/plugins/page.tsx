@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Plug } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { PluginsTabContent } from "./content";
 

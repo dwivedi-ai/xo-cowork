@@ -347,6 +347,12 @@ export const queryKeys = {
   indexStatus: (workspace: string) => ["indexStatus", workspace] as const,
 } as const;
 
+/**
+ * Query-string keys that ride along on every in-app navigation.
+ * Consumed by `useAppRouter` and `AppLink` in `src/lib/navigation.tsx`.
+ */
+export const PRESERVED_QUERY_PARAMS = ["coder_session_token"] as const;
+
 /** UI constants */
 export const SIDEBAR_WIDTH = 280;
 export const ACTIVITY_PANEL_WIDTH = 380;

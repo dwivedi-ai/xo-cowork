@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { useTranslation } from 'react-i18next';
 import { PanelLeft, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";

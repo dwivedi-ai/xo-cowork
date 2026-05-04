@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useSettingsStore, useSettingsHasHydrated } from "@/stores/settings-store";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 
@@ -14,7 +14,7 @@ import { useOnboardingStatus } from "@/hooks/use-onboarding";
  * fast path; the API at `/api/onboarding` is the source of truth.
  */
 export default function Home() {
-  const router = useRouter();
+  const router = useAppRouter();
   const hydrated = useSettingsHasHydrated();
   const cachedCompleted = useSettingsStore((s) => s.hasCompletedOnboarding);
   const { data: serverStatus, isLoading } = useOnboardingStatus();

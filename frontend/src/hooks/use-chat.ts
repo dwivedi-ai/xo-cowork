@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -22,7 +22,7 @@ import type { SessionResponse } from "@/types/session";
  * Core chat hook — orchestrates the full prompt → stream → assemble cycle.
  */
 export function useChat(currentSessionId?: string) {
-  const router = useRouter();
+  const router = useAppRouter();
   const queryClient = useQueryClient();
 
   // Subscribe only to the specific fields ChatView needs for rendering.

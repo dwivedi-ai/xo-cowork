@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -29,7 +29,7 @@ type FlatItem =
 
 export function SessionList() {
   const { t } = useTranslation('common');
-  const router = useRouter();
+  const router = useAppRouter();
   const activeSessionId = useActiveSessionId();
   const {
     data: sessionPages,

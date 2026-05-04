@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { AppLink as Link, useAppRouter } from "@/lib/navigation";
 import { ArrowLeft, Settings, Cpu, Timer, Plug, Wifi, KeyRound, FileJson, BarChart3 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ const VISIBLE_SETTINGS_TABS = SETTINGS_TABS.filter((tab) => !HIDDEN_TABS.has(tab
 
 export default function SettingsPageClient() {
   const { t } = useTranslation(["settings", "usage"]);
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
   const activeTab: TabId =

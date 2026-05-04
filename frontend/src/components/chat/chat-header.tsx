@@ -2,8 +2,7 @@
 
 import { useCallback } from "react";
 import { useTranslation } from 'react-i18next';
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { AppLink as Link, useAppRouter } from "@/lib/navigation";
 import { SquarePen, ArrowLeft, List, Square } from "lucide-react";
 import { HeaderModelDropdown } from "@/components/selectors/header-model-dropdown";
 import { ContextIndicator } from "@/components/chat/context-indicator";
@@ -20,7 +19,7 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ sessionId }: ChatHeaderProps) {
   const { t } = useTranslation('chat');
-  const router = useRouter();
+  const router = useAppRouter();
   const isCollapsed = useSidebarStore((s) => s.isCollapsed);
   const toggle = useSidebarStore((s) => s.toggle);
   const remote = isRemoteMode();
