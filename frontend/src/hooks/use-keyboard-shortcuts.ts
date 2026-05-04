@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 
 interface KeyboardShortcutsOptions {
   /** Callback to stop current generation */
@@ -25,7 +25,7 @@ export function useKeyboardShortcuts({
   onCopyLast,
   enabled = true,
 }: KeyboardShortcutsOptions = {}) {
-  const router = useRouter();
+  const router = useAppRouter();
 
   useEffect(() => {
     if (!enabled) return;

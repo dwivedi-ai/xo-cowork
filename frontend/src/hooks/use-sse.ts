@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SSEClient } from "@/lib/sse";
@@ -96,8 +96,8 @@ class ProgressiveBuffer {
 export function useSSE(streamId: string | null) {
   const clientRef = useRef<SSEClient | null>(null);
   const reasoningBufferRef = useRef<ProgressiveBuffer | null>(null);
-  const routerRef = useRef<ReturnType<typeof useRouter>>(null!);
-  routerRef.current = useRouter();
+  const routerRef = useRef<ReturnType<typeof useAppRouter>>(null!);
+  routerRef.current = useAppRouter();
   const queryClient = useQueryClient();
   const store = useChatStore;
   const connectionStore = useConnectionStore;

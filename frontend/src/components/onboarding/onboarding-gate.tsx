@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { useSettingsStore, useSettingsHasHydrated } from "@/stores/settings-store";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 
@@ -19,7 +20,7 @@ import { useOnboardingStatus } from "@/hooks/use-onboarding";
  * browser from being briefly bounced to `/onboard`.
  */
 export function OnboardingGate() {
-  const router = useRouter();
+  const router = useAppRouter();
   const pathname = usePathname();
   const hydrated = useSettingsHasHydrated();
   const cachedCompleted = useSettingsStore((s) => s.hasCompletedOnboarding);

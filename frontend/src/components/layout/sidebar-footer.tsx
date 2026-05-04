@@ -2,7 +2,7 @@
 
 import { User, CreditCard, Settings, Cpu } from "lucide-react";
 import { useTranslation } from 'react-i18next';
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { useSettingsStore } from "@/stores/settings-store";
 
 function ProviderStatusBadge() {

@@ -1,7 +1,7 @@
 "use client";
 
 import { GitBranch } from "lucide-react";
-import Link from "next/link";
+import { AppLink as Link } from "@/lib/navigation";
 import { getChatRoute } from "@/lib/routes";
 import type { SubtaskPart as SubtaskPartType } from "@/types/message";
 

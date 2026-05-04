@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { SquarePen, Settings, Loader2, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -50,7 +50,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function MobileTaskListPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const healthStatus = useRemoteHealth();
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());

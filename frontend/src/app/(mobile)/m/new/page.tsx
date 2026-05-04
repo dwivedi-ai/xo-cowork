@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAppRouter } from "@/lib/navigation";
 import { ArrowLeft, ArrowUp, Loader2, Paperclip, Camera, X, ChevronDown, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -20,7 +20,7 @@ import { MobileDirectoryBrowser } from "@/components/mobile/directory-browser";
  * No local provider/model state — single source of truth.
  */
 export default function MobileNewTaskPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
