@@ -194,6 +194,7 @@ export const API = {
     OLLAMA: "/api/config/ollama",
     LOCAL_PROVIDER: "/api/config/local",
     OPENCLAW: "/api/config/openclaw",
+    WORKSPACE: "/api/config/workspace",
   },
   FTS: {
     INDEX: (workspace: string, sessionId?: string) =>

@@ -16,6 +16,7 @@ import { OfflineOverlay } from "@/components/layout/offline-overlay";
 import { StreamingMessage } from "@/components/messages/assistant-message";
 import { FileChip } from "./file-chip";
 import { useChat } from "@/hooks/use-chat";
+import { useWorkspaceConfig } from "@/hooks/use-workspace-config";
 import { useChatStore } from "@/stores/chat-store";
 import { useArtifactStore } from "@/stores/artifact-store";
 import { useActivityStore } from "@/stores/activity-store";
@@ -57,6 +58,7 @@ export function Landing() {
   const { t } = useTranslation('chat');
   const { sendMessage, isGenerating, stopGeneration, pendingUserText, pendingAttachments, streamingParts, streamingText, streamingReasoning } = useChat();
   const globalWorkspace = useSettingsStore((s) => s.workspaceDirectory);
+  const { roots: workspaceRoots } = useWorkspaceConfig();
   // Pick random subsets on each mount — stable during the session
   const capabilities = useMemo(() => pickRandom(ALL_CAPABILITIES, 4), []);
   const starters = useMemo(() => pickRandom(ALL_STARTERS, 4), []);
@@ -169,9 +171,11 @@ export function Landing() {
     );
   }
 
-  // Derive project info from the selected workspace
-  const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
-  const isProjectSelected = globalWorkspace && globalWorkspace !== "." && globalWorkspace.startsWith(WORKSPACE_ROOT + "/");
+  // Derive project info from the selected workspace using roots from commands.json via the API
+  const isProjectSelected =
+    globalWorkspace &&
+    globalWorkspace !== "." &&
+    Object.values(workspaceRoots).some((root) => globalWorkspace.startsWith(root + "/"));
   const projectName = isProjectSelected
     ? globalWorkspace!.split("/").pop() ?? ""
     : "";

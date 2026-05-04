@@ -55,10 +55,14 @@ interface SettingsStore {
   language: string;
   /** Active provider whose models are shown in selectors */
   activeProvider: ActiveProvider;
+  /** Backend identifier for the current agent context (null = server default) */
+  agentName: string | null;
   /** Set model and its provider */
   setSelectedModel: (model: string | null, providerId?: string | null) => void;
   /** Set agent (for backward compatibility) */
   setSelectedAgent: (agent: string) => void;
+  /** Set agent backend name */
+  setAgentName: (name: string | null) => void;
   /** Toggle safe mode on/off */
   setSafeMode: (enabled: boolean) => void;
   /** Set unified work mode (plan / ask / auto) */
@@ -102,10 +106,11 @@ export const useSettingsStore = create<SettingsStore>()(
       reasoningEnabled: true,
       permissionPresets: { fileChanges: true, runCommands: true },
       savedPermissions: [],
-      workspaceDirectory: "/home/coder/.openclaw/workspace",
+      workspaceDirectory: null,
       hasSeenHints: false,
       language: "auto",
       activeProvider: "byok",
+      agentName: null,
       setSelectedModel: (model, providerId) => set({ selectedModel: model, selectedProviderId: providerId ?? null }),
       setSelectedAgent: (agent) => {
         const isPlan = agent === "plan";
@@ -193,6 +198,7 @@ export const useSettingsStore = create<SettingsStore>()(
         import("@/i18n/config").then((mod) => mod.default.changeLanguage(lang));
       },
       setActiveProvider: (provider) => set({ activeProvider: provider }),
+      setAgentName: (name) => set({ agentName: name }),
     }),
     {
       name: "xo-cowork-settings",

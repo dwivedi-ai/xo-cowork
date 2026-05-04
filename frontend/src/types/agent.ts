@@ -26,6 +26,7 @@ export interface CreateAgentRequest {
   id?: string;
   description?: string;
   workspace?: string;
+  backend?: "openclaw" | "claude_code";
 }
 
 /** GET/PATCH /api/agents/{id} — OpenClaw bridge (full snapshot) */
