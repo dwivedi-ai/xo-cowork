@@ -2,21 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Plug, Zap } from "lucide-react";
+import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { usePathname } from "next/navigation";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar-store";
 
-const NAV_LINKS = [
-  { href: "/plugins", label: "Plugins", icon: Plug },
-  { href: "/automations", label: "Automations", icon: Zap },
-];
-
 export function SidebarNav() {
   const { t } = useTranslation("common");
-  const pathname = usePathname();
   const { isSearchOpen, toggleSearch, searchQuery, setSearchQuery } =
     useSidebarStore();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,29 +64,6 @@ export function SidebarNav() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Page nav links */}
-      <div className="mt-1 border-b border-[var(--border-default)] opacity-50" />
-      <div className="flex flex-col gap-0.5 pt-1">
-        {NAV_LINKS.map(({ href, label, icon: Icon }) => {
-          const isActive = pathname === href || pathname?.startsWith(href + "/");
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] transition-all duration-150 ease-out",
-                isActive
-                  ? "bg-[var(--sidebar-active)] text-[var(--text-primary)] shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.98]",
-              )}
-            >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
-              <span>{label}</span>
-            </Link>
-          );
-        })}
-      </div>
 
       {/* Divider before chat list */}
       <div className="mt-1 border-b border-[var(--border-default)] opacity-50" />
