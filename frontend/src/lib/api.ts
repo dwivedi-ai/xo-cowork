@@ -1,6 +1,6 @@
 /** Lightweight fetch wrapper for the XO-Cowork backend API. */
 
-import { getBackendUrl, IS_DESKTOP, resolveApiUrl } from "./constants";
+import { appendPreservedParams, getBackendUrl, IS_DESKTOP, resolveApiUrl } from "./constants";
 import { getRemoteConfig } from "./remote-connection";
 import i18n from "@/i18n/config";
 
@@ -34,6 +34,7 @@ async function request<T>(
   } else {
     resolvedUrl = resolveApiUrl(url);
   }
+  resolvedUrl = appendPreservedParams(resolvedUrl);
 
   let lastError: unknown;
 
@@ -81,6 +82,7 @@ async function request<T>(
         if (!remoteConfig && IS_DESKTOP) {
           const backend = await getBackendUrl();
           resolvedUrl = url.startsWith("http") ? url : `${backend}${url}`;
+          resolvedUrl = appendPreservedParams(resolvedUrl);
         }
         continue;
       }

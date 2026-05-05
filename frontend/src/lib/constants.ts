@@ -354,6 +354,45 @@ export const queryKeys = {
  */
 export const PRESERVED_QUERY_PARAMS = ["coder_session_token"] as const;
 
+/** Must match `STORAGE_PREFIX` in `components/providers/preserve-query-params.tsx`. */
+const PRESERVE_STORAGE_PREFIX = "xo:preserve:";
+
+/**
+ * Append `PRESERVED_QUERY_PARAMS` onto an outbound request URL. Without
+ * this, fetch/SSE calls only carry Coder's session cookie — when that
+ * cookie drifts (short TTL, partitioning, eviction) the tunnel proxy
+ * 303s to a cross-origin auth-redirect and the browser blocks the chain
+ * with a CORS error. Source: URL bar first, then sessionStorage.
+ * Existing keys on the URL are not overwritten.
+ */
+export function appendPreservedParams(url: string): string {
+  if (typeof window === "undefined") return url;
+
+  const placeholder = "http://_xo_placeholder_";
+  const isAbsolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url, placeholder);
+  } catch {
+    return url;
+  }
+
+  const current = new URLSearchParams(window.location.search);
+  let changed = false;
+  for (const key of PRESERVED_QUERY_PARAMS) {
+    if (parsed.searchParams.has(key)) continue;
+    const value =
+      current.get(key) ?? sessionStorage.getItem(PRESERVE_STORAGE_PREFIX + key);
+    if (value) {
+      parsed.searchParams.set(key, value);
+      changed = true;
+    }
+  }
+  if (!changed) return url;
+  if (isAbsolute) return parsed.toString();
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 /** UI constants */
 export const SIDEBAR_WIDTH = 280;
 export const ACTIVITY_PANEL_WIDTH = 380;
