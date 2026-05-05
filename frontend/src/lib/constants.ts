@@ -357,6 +357,19 @@ export const PRESERVED_QUERY_PARAMS = ["coder_session_token"] as const;
 /** Must match `STORAGE_PREFIX` in `components/providers/preserve-query-params.tsx`. */
 const PRESERVE_STORAGE_PREFIX = "xo:preserve:";
 
+/** URL bar first, then sessionStorage. SSR-safe (returns null on server). */
+function readPreservedParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  const fromUrl = new URLSearchParams(window.location.search).get(key);
+  if (fromUrl) return fromUrl;
+  return sessionStorage.getItem(PRESERVE_STORAGE_PREFIX + key);
+}
+
+/** Coder tunnel session token — used for the `Coder-Session-Token` header. */
+export function getCoderSessionToken(): string | null {
+  return readPreservedParam("coder_session_token");
+}
+
 /**
  * Append `PRESERVED_QUERY_PARAMS` onto an outbound request URL. Without
  * this, fetch/SSE calls only carry Coder's session cookie — when that
@@ -377,12 +390,10 @@ export function appendPreservedParams(url: string): string {
     return url;
   }
 
-  const current = new URLSearchParams(window.location.search);
   let changed = false;
   for (const key of PRESERVED_QUERY_PARAMS) {
     if (parsed.searchParams.has(key)) continue;
-    const value =
-      current.get(key) ?? sessionStorage.getItem(PRESERVE_STORAGE_PREFIX + key);
+    const value = readPreservedParam(key);
     if (value) {
       parsed.searchParams.set(key, value);
       changed = true;

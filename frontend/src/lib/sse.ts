@@ -16,6 +16,7 @@ import {
   SSE_RECONNECT_BACKOFF,
   SSE_MAX_RETRIES,
   appendPreservedParams,
+  getCoderSessionToken,
 } from "./constants";
 import { getRemoteToken } from "./remote-connection";
 import type { SSEEventData } from "@/types/streaming";
@@ -208,9 +209,13 @@ export class SSEClient {
 
     this.options.onStatusChange?.("connecting");
 
+    const headers: Record<string, string> = { "Accept": "text/event-stream" };
+    const coderToken = getCoderSessionToken();
+    if (coderToken) headers["Coder-Session-Token"] = coderToken;
+
     fetch(url, {
       method: "POST",
-      headers: { "Accept": "text/event-stream" },
+      headers,
       signal: controller.signal,
     })
       .then(async (res) => {
