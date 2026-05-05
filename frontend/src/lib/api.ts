@@ -1,6 +1,12 @@
 /** Lightweight fetch wrapper for the XO-Cowork backend API. */
 
-import { appendPreservedParams, getBackendUrl, IS_DESKTOP, resolveApiUrl } from "./constants";
+import {
+  appendPreservedParams,
+  getBackendUrl,
+  getCoderSessionToken,
+  IS_DESKTOP,
+  resolveApiUrl,
+} from "./constants";
 import { getRemoteConfig } from "./remote-connection";
 import i18n from "@/i18n/config";
 
@@ -38,10 +44,14 @@ async function request<T>(
 
   let lastError: unknown;
 
-  // Build auth headers for remote mode
+  // Build auth headers for remote mode + Coder tunnel
   const authHeaders: Record<string, string> = {};
   if (remoteConfig) {
     authHeaders["Authorization"] = `Bearer ${remoteConfig.token}`;
+  }
+  const coderToken = getCoderSessionToken();
+  if (coderToken) {
+    authHeaders["Coder-Session-Token"] = coderToken;
   }
 
   for (let attempt = 0; attempt <= NETWORK_RETRY_MAX; attempt++) {
