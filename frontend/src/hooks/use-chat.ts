@@ -110,11 +110,11 @@ export function useChat(currentSessionId?: string) {
         // partially-populated assistant messages that duplicate the StreamingMessage.
         // Messages are refetched after DONE in the SSE handler.
 
-        // Optimistically add new session to sidebar immediately.
-        // Navigation is handled by the DONE event in use-sse.ts after streaming
-        // finishes — navigating here causes Landing to unmount mid-stream, which
-        // kills the SSE connection and makes the response disappear.
+        // Navigate to session if this was a new conversation
+        // For new sessions where session_id is null (streaming creation),
+        // navigation is deferred until session-created SSE event arrives.
         if (!currentSessionId && res.session_id) {
+          // Optimistically add the session to the sidebar with user text as temp title
           const tempSession: SessionResponse = {
             id: res.session_id,
             project_id: null,
@@ -145,6 +145,7 @@ export function useChat(currentSessionId?: string) {
               };
             },
           );
+          router.push(getChatRoute(res.session_id));
         }
         return true;
       } catch (err) {

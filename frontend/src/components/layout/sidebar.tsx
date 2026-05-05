@@ -1,13 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
 import { motion } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarHeader } from "./sidebar-header";
 import { SidebarNav } from "./sidebar-nav";
 import { ProjectExplorer } from "./project-explorer";
 import { AgentsExplorer } from "./agents-explorer";
-import { SessionList } from "./session-list";
 import { SidebarFooter } from "./sidebar-footer";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { SIDEBAR_WIDTH, IS_DESKTOP, TITLE_BAR_HEIGHT } from "@/lib/constants";
@@ -31,9 +29,6 @@ export function Sidebar() {
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
           <ProjectExplorer />
           <AgentsExplorer />
-          <Suspense fallback={<div className="flex-1" />}>
-            <SessionList />
-          </Suspense>
         </div>
 
         <SidebarFooter />
