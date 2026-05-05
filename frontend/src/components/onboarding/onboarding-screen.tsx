@@ -42,8 +42,7 @@ import {
 import { toast } from "sonner";
 import { PersonalityStep } from "./personality-step";
 import type { PersonalityContent } from "@/hooks/use-personality-files";
-
-const WORKSPACE_ROOT = "/home/coder/.openclaw/workspace";
+import { useWorkspaceConfig } from "@/hooks/use-workspace-config";
 
 /* ------------------------------------------------------------------ */
 /* Slide animation                                                     */
@@ -1090,6 +1089,7 @@ function ProjectStep({
   const [projectName, setProjectName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { workspaceRoot } = useWorkspaceConfig();
 
   const handleCreate = async () => {
     const name = projectName.trim();
@@ -1097,7 +1097,7 @@ function ProjectStep({
     setCreating(true);
     setError(null);
     try {
-      const projectPath = `${WORKSPACE_ROOT}/${name}`;
+      const projectPath = `${workspaceRoot}/${name}`;
       await api.post(API.FILES.MKDIR, { path: projectPath, scaffold: true });
       setWorkspaceDirectory(projectPath);
       completeOnboarding();

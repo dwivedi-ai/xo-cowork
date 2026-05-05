@@ -196,7 +196,7 @@ export function useSSE(streamId: string | null) {
           parent_id: null,
           slug: null,
           agent: null,
-          directory: useSettingsStore.getState().workspaceDirectory ?? "/home/coder/.openclaw/workspace",
+          directory: useSettingsStore.getState().workspaceDirectory ?? null,
           title: store.getState().pendingUserText?.slice(0, 60) ?? "New conversation",
           version: 0,
           summary_additions: 0,
@@ -600,6 +600,9 @@ export function useSSE(streamId: string | null) {
         // finishGeneration transitions it to show DB-fetched messages.
         const isNewSession = sessionId && sessionId !== "pending" && window.location.pathname.endsWith("/new");
         if (isNewSession) {
+          // Clear streamId before navigation so ChatView mounts with streamId=null
+          // and doesn't trigger useSSE, which would call finishGeneration prematurely.
+          store.setState({ streamId: null });
           routerRef.current.replace(getChatRoute(sessionId));
           // Wait for navigation to render before clearing streaming state
           await new Promise<void>((r) =>
