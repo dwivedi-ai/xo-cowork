@@ -10,13 +10,37 @@ defined under the `routes/` package. All feature code lives in its own module
 (see `docs/routes.md` for the map).
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import CORS_ORIGINS
+from config import BRIDGE_PUBLIC_URL, CORS_ORIGINS
 from routes import all_routers
 
-app = FastAPI(title="OpenClaw Bridge")
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    if BRIDGE_PUBLIC_URL:
+        log.info("Bridge public URL: %s (used for OAuth callbacks)", BRIDGE_PUBLIC_URL)
+    else:
+        log.info(
+            "Bridge public URL: not set — OAuth flows fall back to local 127.0.0.1 callbacks."
+            " Set OAUTH_CALLBACK_BASE_URL or VSCODE_PROXY_URI to enable browser-direct redirects."
+        )
+    # Start rclone daemon for the Google Drive connector (non-fatal if rclone isn't installed)
+    try:
+        from gdrive_rclone import ensure_rclone_running
+        await ensure_rclone_running()
+    except Exception as exc:  # pragma: no cover
+        log.warning("rclone startup skipped: %s", exc)
+    yield
+
+
+app = FastAPI(title="OpenClaw Bridge", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

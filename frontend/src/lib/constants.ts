@@ -303,6 +303,42 @@ export const API = {
     TASKS: "/api/remote/tasks",
     PROVIDER_INFO: "/api/remote/provider-info",
   },
+  GDRIVE: {
+    REMOTES: "/api/connectors/gdrive/remotes",
+    REMOTE: (name: string) => `/api/connectors/gdrive/remotes/${encodeURIComponent(name)}` as const,
+    CREATE: "/api/connectors/gdrive/remotes",
+    SESSION: (id: string) => `/api/connectors/gdrive/sessions/${id}` as const,
+    CANCEL_SESSION: (id: string) => `/api/connectors/gdrive/sessions/${id}/cancel` as const,
+    SUBMIT_CODE: (id: string) => `/api/connectors/gdrive/sessions/${id}/submit` as const,
+  },
+  ONEDRIVE: {
+    REMOTES: "/api/connectors/onedrive/remotes",
+    REMOTE: (name: string) => `/api/connectors/onedrive/remotes/${encodeURIComponent(name)}` as const,
+    CREATE: "/api/connectors/onedrive/remotes",
+    SESSION: (id: string) => `/api/connectors/onedrive/sessions/${id}` as const,
+    CANCEL_SESSION: (id: string) => `/api/connectors/onedrive/sessions/${id}/cancel` as const,
+    SUBMIT_CODE: (id: string) => `/api/connectors/onedrive/sessions/${id}/submit` as const,
+  },
+  GITHUB: {
+    STATUS: "/api/connectors/github/status",
+    TOKEN: "/api/connectors/github/token",
+    DISCONNECT: "/api/connectors/github/disconnect",
+    RECONNECT: "/api/connectors/github/reconnect",
+  },
+  VERCEL: {
+    TOKEN: "/api/connectors/vercel/token",
+    STATUS: "/api/connectors/vercel/status",
+    DISCONNECT: "/api/connectors/vercel/disconnect",
+    RECONNECT: "/api/connectors/vercel/reconnect",
+    OAUTH_START: "/api/connectors/vercel/oauth/start",
+    OAUTH_EXCHANGE: "/api/connectors/vercel/oauth/exchange",
+  },
+  MANUS: {
+    STATUS: "/api/connectors/manus/status",
+    TOKEN: "/api/connectors/manus/token",
+    DISCONNECT: "/api/connectors/manus/disconnect",
+    RECONNECT: "/api/connectors/manus/reconnect",
+  },
 } as const;
 
 /** Query key factories for TanStack Query. */

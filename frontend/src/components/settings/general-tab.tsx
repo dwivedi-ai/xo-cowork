@@ -11,11 +11,15 @@ import { IS_DESKTOP } from "@/lib/constants";
 export function GeneralTab() {
   const { t, i18n } = useTranslation('settings');
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [appVersion, setAppVersion] = useState("0.0.1");
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "up-to-date" | "downloading" | "error">("idle");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
+
+  // Wait for hydration before reading theme (next-themes is undefined on server)
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!IS_DESKTOP) return;
@@ -90,7 +94,7 @@ export function GeneralTab() {
               key={value}
               onClick={() => setTheme(value)}
               className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
-                theme === value
+                mounted && theme === value
                   ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/5"
                   : "border-[var(--border-default)] hover:bg-[var(--surface-secondary)]"
               }`}

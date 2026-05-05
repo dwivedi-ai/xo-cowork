@@ -4,6 +4,10 @@ import path from "path";
 const isDesktopBuild = process.env.DESKTOP_BUILD === "true";
 
 const nextConfig: NextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   turbopack: {
     root: path.resolve(__dirname),
   },

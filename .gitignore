@@ -77,3 +77,13 @@ SECURITY.md
 README.zh-CN.md
 reminders.md
 /docs/
+
+# rclone config (contains OAuth tokens)
+rclone.conf
+
+# rclone runtime artifacts (binary downloaded at boot, unix socket)
+bridge/bin/
+rclone-rcd.sock
+
+# MCP tokens (contains GitHub PAT)
+mcp-tokens.json

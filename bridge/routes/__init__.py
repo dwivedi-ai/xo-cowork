@@ -23,6 +23,11 @@ from .secrets import router as secrets_router
 from .sessions import router as sessions_router
 from .usage import router as usage_router
 from .workspace_memory import router as workspace_memory_router
+from .gdrive import router as gdrive_router
+from .onedrive import router as onedrive_router
+from .github import router as github_router
+from .vercel import router as vercel_router
+from .manus import router as manus_router
 
 all_routers: list[APIRouter] = [
     health_router,
@@ -37,4 +42,9 @@ all_routers: list[APIRouter] = [
     usage_router,
     fts_router,
     misc_router,
+    gdrive_router,
+    onedrive_router,
+    github_router,
+    vercel_router,
+    manus_router,
 ]

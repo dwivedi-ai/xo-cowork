@@ -22,6 +22,35 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
+# ── Bridge public URL (for OAuth callbacks that must be browser-reachable) ──
+#
+# When the bridge is running inside a Coder workspace, Coder exposes every
+# listening port at https://<port>--<agent>--<workspace>--<user>--<host>.
+# We use this as the redirect_uri for OAuth providers that allow non-loopback
+# redirects (e.g. Vercel via dynamic client registration), so users don't
+# need IDE port forwarding for the OAuth callback to land.
+#
+# Resolution order:
+#   1. OAUTH_CALLBACK_BASE_URL (explicit override, e.g. on a laptop with ngrok)
+#   2. VSCODE_PROXY_URI (Coder template). Format: "https://{{port}}--…".
+#      We substitute {{port}} with BRIDGE_PORT (defaults to 8000).
+#   3. None — connectors fall back to local-loopback OAuth flows.
+
+BRIDGE_PORT = int(os.getenv("PORT", os.getenv("BRIDGE_PORT", "8000")))
+
+
+def _resolve_bridge_public_url() -> str | None:
+    explicit = (os.getenv("OAUTH_CALLBACK_BASE_URL", "") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    vscode_proxy = (os.getenv("VSCODE_PROXY_URI", "") or "").strip().rstrip("/")
+    if vscode_proxy and "{{port}}" in vscode_proxy:
+        return vscode_proxy.replace("{{port}}", str(BRIDGE_PORT))
+    return None
+
+
+BRIDGE_PUBLIC_URL = _resolve_bridge_public_url()
+
 # ── OpenClaw on-disk layout ──────────────────────────────────────────────────
 
 OPENCLAW_DIR = Path.home() / ".openclaw"
