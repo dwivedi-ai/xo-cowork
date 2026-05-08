@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   X,
   Loader2,
@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
   ShieldCheck,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,8 @@ import {
   useGitHubSubmitToken,
   useGitHubDisconnect,
   useGitHubReconnect,
+  useGitHubCliLogin,
+  type GitHubAuthMethod,
 } from "@/hooks/use-github";
 
 // ---------------------------------------------------------------------------
@@ -74,12 +77,7 @@ function TokenForm({
 
   return (
     <div className="space-y-4">
-      {/* Instructions */}
       <div className="space-y-3">
-        <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
-          Connect with Personal Access Token
-        </h3>
-
         <ol className="space-y-2.5">
           <li className="flex gap-2.5">
             <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -188,6 +186,205 @@ function TokenForm({
 }
 
 // ---------------------------------------------------------------------------
+// GitHub CLI sign-in form
+// ---------------------------------------------------------------------------
+
+function CliForm({ onSuccess }: { onSuccess: () => void }) {
+  const cli = useGitHubCliLogin();
+  const [copied, setCopied] = useState(false);
+
+  // When the device flow completes, tell the parent so it can refetch status.
+  useEffect(() => {
+    if (cli.phase === "connected") onSuccess();
+  }, [cli.phase, onSuccess]);
+
+  const copyCode = async () => {
+    if (!cli.userCode) return;
+    try {
+      await navigator.clipboard.writeText(cli.userCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API may be unavailable (e.g. non-secure context); ignore.
+    }
+  };
+
+  // Idle: explain the flow and offer the start button.
+  if (cli.phase === "idle") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+            Sign in to your GitHub account by entering a one-time code on
+            github.com — no token to paste, no permissions to pick. The
+            server uses the GitHub CLI to complete the flow.
+          </p>
+        </div>
+
+        <Button
+          className="w-full"
+          onClick={() => cli.start()}
+          disabled={cli.isStarting}
+        >
+          {cli.isStarting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Starting…
+            </>
+          ) : (
+            <>
+              <Terminal className="h-4 w-4 mr-2" />
+              Start GitHub CLI sign-in
+            </>
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  // Failed: show the error and let the user retry.
+  if (cli.phase === "failed") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start gap-2 rounded-xl border border-[var(--color-destructive)]/30 bg-[var(--color-destructive)]/5 p-3">
+          <AlertCircle className="h-4 w-4 text-[var(--color-destructive)] shrink-0 mt-0.5" />
+          <p className="text-xs text-[var(--text-primary)]">
+            {cli.error || "GitHub CLI sign-in failed."}
+          </p>
+        </div>
+        <Button
+          className="w-full"
+          variant="outline"
+          onClick={() => cli.reset()}
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  // Pending: show the device code + verification URL + cancel.
+  return (
+    <div className="space-y-4">
+      <ol className="space-y-3">
+        <li className="flex gap-2.5">
+          <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+            1
+          </span>
+          <div className="flex-1 space-y-1.5">
+            <p className="text-xs text-[var(--text-primary)]">
+              Copy this one-time code
+            </p>
+            <button
+              type="button"
+              onClick={copyCode}
+              className="group w-full flex items-center justify-between gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--surface-secondary)] px-3 py-2.5 hover:border-[var(--brand-primary)]/50 transition-colors"
+              title="Click to copy"
+            >
+              <span className="font-mono text-base font-semibold tracking-[0.2em] text-[var(--text-primary)]">
+                {cli.userCode}
+              </span>
+              {copied ? (
+                <Check className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Copy className="h-4 w-4 text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]" />
+              )}
+            </button>
+          </div>
+        </li>
+
+        <li className="flex gap-2.5">
+          <span className="h-5 w-5 rounded-full bg-[var(--brand-primary)] text-[var(--brand-primary-text)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+            2
+          </span>
+          <div className="flex-1 space-y-1.5">
+            <p className="text-xs text-[var(--text-primary)]">
+              Open GitHub and paste the code to authorize
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              onClick={() =>
+                cli.verificationUri &&
+                window.open(cli.verificationUri, "_blank", "noopener")
+              }
+            >
+              <ExternalLink className="h-3 w-3 mr-1.5" />
+              Open github.com/login/device
+            </Button>
+          </div>
+        </li>
+      </ol>
+
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] px-3 py-2.5">
+        <Loader2 className="h-3.5 w-3.5 text-[var(--text-tertiary)] animate-spin shrink-0" />
+        <p className="text-[11px] text-[var(--text-secondary)]">
+          Waiting for you to authorize on GitHub…
+        </p>
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        onClick={() => cli.cancel()}
+        disabled={cli.isCancelling}
+      >
+        {cli.isCancelling ? (
+          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+        ) : (
+          <X className="h-3.5 w-3.5 mr-1.5" />
+        )}
+        Cancel sign-in
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Method tabs (PAT / GitHub CLI)
+// ---------------------------------------------------------------------------
+
+type AuthTab = "pat" | "cli";
+
+function MethodTabs({
+  active,
+  onChange,
+}: {
+  active: AuthTab;
+  onChange: (t: AuthTab) => void;
+}) {
+  const tabClass = (selected: boolean) =>
+    [
+      "flex-1 h-8 rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors",
+      selected
+        ? "bg-[var(--surface-secondary)] text-[var(--text-primary)] border border-[var(--border-default)]"
+        : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] border border-transparent",
+    ].join(" ");
+
+  return (
+    <div className="flex gap-1 p-1 rounded-xl bg-[var(--surface-secondary)]/40 border border-[var(--border-default)]">
+      <button
+        type="button"
+        className={tabClass(active === "pat")}
+        onClick={() => onChange("pat")}
+      >
+        Personal Access Token
+      </button>
+      <button
+        type="button"
+        className={tabClass(active === "cli")}
+        onClick={() => onChange("cli")}
+      >
+        GitHub CLI
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Connected view
 // ---------------------------------------------------------------------------
 
@@ -195,12 +392,14 @@ function ConnectedView({
   username,
   name,
   avatarUrl,
+  authMethod,
   onDisconnect,
   onReconnect,
 }: {
   username: string;
   name?: string;
   avatarUrl?: string;
+  authMethod?: GitHubAuthMethod;
   onDisconnect: () => void;
   onReconnect: () => void;
 }) {
@@ -231,7 +430,22 @@ function ConnectedView({
           <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
             {name || username}
           </p>
-          <p className="text-[11px] text-[var(--text-tertiary)]">@{username}</p>
+          <p className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+            <span>@{username}</span>
+            {authMethod && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1">
+                  {authMethod === "cli" ? (
+                    <Terminal className="h-2.5 w-2.5" />
+                  ) : (
+                    <ShieldCheck className="h-2.5 w-2.5" />
+                  )}
+                  via {authMethod === "cli" ? "GitHub CLI" : "PAT"}
+                </span>
+              </>
+            )}
+          </p>
         </div>
         <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
       </div>
@@ -280,6 +494,7 @@ function ConnectedView({
 
 function GitHubModal({ onClose }: { onClose: () => void }) {
   const { data, isLoading, refetch } = useGitHubStatus();
+  const [tab, setTab] = useState<AuthTab>("pat");
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
@@ -326,20 +541,26 @@ function GitHubModal({ onClose }: { onClose: () => void }) {
               username={data?.username ?? ""}
               name={data?.name}
               avatarUrl={data?.avatar_url}
+              authMethod={data?.auth_method}
               onDisconnect={() => refetch()}
               onReconnect={() => refetch()}
             />
           ) : (
-            <>
+            <div className="space-y-4">
               {/* Error from previous failed state */}
               {data?.status === "failed" && data?.error && (
-                <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 mb-4">
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                   <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                   <p className="text-xs text-[var(--text-primary)]">{data.error}</p>
                 </div>
               )}
-              <TokenForm onSuccess={() => refetch()} />
-            </>
+              <MethodTabs active={tab} onChange={setTab} />
+              {tab === "pat" ? (
+                <TokenForm onSuccess={() => refetch()} />
+              ) : (
+                <CliForm onSuccess={() => refetch()} />
+              )}
+            </div>
           )}
         </div>
       </div>

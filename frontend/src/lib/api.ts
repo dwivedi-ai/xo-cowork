@@ -97,9 +97,21 @@ async function request<T>(
 
       return res.json() as Promise<T>;
     } catch (err) {
-      // Only retry network errors (TypeError = connection refused/reset/failed).
-      // Do NOT retry HTTP errors (ApiError) — those are business-level errors.
-      if (err instanceof TypeError && attempt < NETWORK_RETRY_MAX) {
+      // Retry on transient failures:
+      //   - TypeError: browser-level network error (refused/reset/DNS).
+      //   - ApiError 502/503/504: gateway/upstream errors.
+      //   - ApiError 500 with empty/text body: Next.js dev-proxy emits this
+      //     when its upstream connection to the FastAPI backend is reset
+      //     mid-request (e.g. uvicorn --reload restart). A genuine FastAPI
+      //     500 always returns a JSON body with a `detail` field.
+      const isNetworkErr = err instanceof TypeError;
+      const isGatewayErr =
+        err instanceof ApiError && [502, 503, 504].includes(err.status);
+      const isProxy500 =
+        err instanceof ApiError &&
+        err.status === 500 &&
+        !(typeof err.body === "object" && err.body !== null && "detail" in err.body);
+      if ((isNetworkErr || isGatewayErr || isProxy500) && attempt < NETWORK_RETRY_MAX) {
         lastError = err;
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         // Re-resolve URL in case backend restarted on a new port

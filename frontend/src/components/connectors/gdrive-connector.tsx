@@ -14,6 +14,9 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
+  FolderPlus,
+  Folder,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +26,15 @@ import {
   useGDriveDeleteRemote,
   useGDriveCancelSession,
   useGDriveSubmitCode,
+  useGDriveMkdir,
+  useGDriveFolders,
+  useGDriveRmdir,
+  useGDriveUpload,
   type GDriveRemote,
 } from "@/hooks/use-gdrive";
+
+const MAX_UPLOAD_MIB = 500;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MIB * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Google Drive icon (SVG)
@@ -78,6 +88,192 @@ function validateName(name: string): string | null {
 // Remote row
 // ---------------------------------------------------------------------------
 
+function FolderItem({
+  remoteName,
+  folderName,
+}: {
+  remoteName: string;
+  folderName: string;
+}) {
+  const rmdir = useGDriveRmdir();
+  const upload = useGDriveUpload();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "ok" | "err">(
+    "idle",
+  );
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const confirmTimer = useRef<number | null>(null);
+  const successTimer = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+      if (successTimer.current !== null) window.clearTimeout(successTimer.current);
+    };
+  }, []);
+
+  const startConfirm = () => {
+    setError(null);
+    setConfirming(true);
+    if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+    confirmTimer.current = window.setTimeout(() => setConfirming(false), 4000);
+  };
+
+  const handleDelete = async () => {
+    if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+    try {
+      await rmdir.mutateAsync({ name: remoteName, path: folderName });
+      // List refreshes via query invalidation; component will unmount.
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete folder.";
+      setError(msg);
+      setConfirming(false);
+    }
+  };
+
+  const handlePickFile = () => {
+    if (uploadStatus === "uploading") return;
+    fileInputRef.current?.click();
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file later
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadStatus("err");
+      setUploadMsg(`File exceeds ${MAX_UPLOAD_MIB} MiB cap.`);
+      return;
+    }
+
+    if (successTimer.current !== null) {
+      window.clearTimeout(successTimer.current);
+      successTimer.current = null;
+    }
+    setUploadStatus("uploading");
+    setUploadMsg(file.name);
+
+    try {
+      await upload.mutateAsync({ name: remoteName, path: folderName, file });
+      setUploadStatus("ok");
+      setUploadMsg(file.name);
+      successTimer.current = window.setTimeout(() => {
+        setUploadStatus("idle");
+        setUploadMsg(null);
+        successTimer.current = null;
+      }, 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed.";
+      setUploadStatus("err");
+      setUploadMsg(msg);
+    }
+  };
+
+  return (
+    <li className="flex flex-col text-[11px] text-[var(--text-primary)] group">
+      <div className="flex items-center gap-2">
+        <Folder className="h-3 w-3 text-[var(--text-tertiary)] shrink-0" />
+        <span className="flex-1 truncate font-mono">{folderName}</span>
+        {error && (
+          <span
+            className="text-[var(--color-destructive)] truncate max-w-[160px]"
+            title={error}
+          >
+            {error}
+          </span>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFile}
+        />
+        <button
+          type="button"
+          onClick={handlePickFile}
+          disabled={uploadStatus === "uploading"}
+          className="h-5 w-5 p-0 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--brand-primary)] opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50 transition-opacity"
+          title="Upload file to this folder"
+        >
+          {uploadStatus === "uploading" ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Upload className="h-3 w-3" />
+          )}
+        </button>
+        {!confirming ? (
+          <button
+            type="button"
+            onClick={startConfirm}
+            disabled={rmdir.isPending}
+            className="h-5 w-5 p-0 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--color-destructive)] opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-opacity"
+            title="Delete folder"
+          >
+            {rmdir.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={rmdir.isPending}
+            className="h-5 px-1.5 rounded text-[10px] font-semibold bg-[var(--color-destructive)]/10 text-[var(--color-destructive)] hover:bg-[var(--color-destructive)]/20 disabled:opacity-50"
+            title="Click again to confirm"
+          >
+            {rmdir.isPending ? "Deleting…" : "Confirm?"}
+          </button>
+        )}
+      </div>
+      {uploadStatus !== "idle" && uploadMsg && (
+        <div className="ml-5 mt-0.5 flex items-center gap-1.5 text-[10px]">
+          {uploadStatus === "uploading" && (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin text-[var(--text-tertiary)] shrink-0" />
+              <span className="text-[var(--text-secondary)] truncate">
+                Uploading {uploadMsg}…
+              </span>
+            </>
+          )}
+          {uploadStatus === "ok" && (
+            <>
+              <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+              <span className="text-emerald-500 truncate">Uploaded {uploadMsg}</span>
+            </>
+          )}
+          {uploadStatus === "err" && (
+            <>
+              <AlertCircle className="h-3 w-3 text-[var(--color-destructive)] shrink-0" />
+              <span
+                className="text-[var(--color-destructive)] truncate"
+                title={uploadMsg}
+              >
+                {uploadMsg}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function validateFolderPath(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return "Folder path is required.";
+  if (trimmed.startsWith("/")) return "Path must not start with '/'.";
+  const segments = trimmed.split("/");
+  if (segments.some((s) => s === "" || s === "." || s === "..")) {
+    return "Invalid folder path.";
+  }
+  return null;
+}
+
 function RemoteRow({
   remote,
   onDelete,
@@ -88,55 +284,221 @@ function RemoteRow({
   onReconnect: (name: string) => void;
 }) {
   const deleteMutation = useGDriveDeleteRemote();
+  const mkdirMutation = useGDriveMkdir();
+  const [expanded, setExpanded] = useState(false);
+  const [folderPath, setFolderPath] = useState("");
+  const [lastCreated, setLastCreated] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const folders = useGDriveFolders(remote.name, expanded && remote.complete);
 
   const handleDelete = async () => {
     await deleteMutation.mutateAsync(remote.name);
     onDelete(remote.name);
   };
 
+  const pathError = folderPath ? validateFolderPath(folderPath) : null;
+
+  const handleCreate = async () => {
+    const trimmed = folderPath.trim();
+    const v = validateFolderPath(trimmed);
+    if (v) {
+      setErrorMsg(v);
+      setLastCreated(null);
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      await mkdirMutation.mutateAsync({ name: remote.name, path: trimmed });
+      setLastCreated(trimmed);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create folder.";
+      setErrorMsg(msg);
+      setLastCreated(null);
+    }
+  };
+
+  const handleCreateAnother = () => {
+    setFolderPath("");
+    setLastCreated(null);
+    setErrorMsg(null);
+  };
+
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] px-4 py-3">
-      {/* Status dot */}
-      <span
-        className={`h-2 w-2 rounded-full shrink-0 ${
-          remote.complete ? "bg-emerald-500" : "bg-amber-500"
-        }`}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-          {remote.name}
-        </p>
-        <p className="text-[11px] text-[var(--text-tertiary)]">
-          {remote.complete ? "Connected" : "Incomplete — reconnect or remove"}
-        </p>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {!remote.complete && (
+    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Status dot */}
+        <span
+          className={`h-2 w-2 rounded-full shrink-0 ${
+            remote.complete ? "bg-emerald-500" : "bg-amber-500"
+          }`}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+            {remote.name}
+          </p>
+          <p className="text-[11px] text-[var(--text-tertiary)]">
+            {remote.complete ? "Connected" : "Incomplete — reconnect or remove"}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {remote.complete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`h-7 w-7 p-0 ${
+                expanded
+                  ? "text-[var(--brand-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              }`}
+              onClick={() => setExpanded((v) => !v)}
+              title="Create folder"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {!remote.complete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-[11px] px-2 text-[var(--color-warning)]"
+              onClick={() => onReconnect(remote.name)}
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Reconnect
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-[11px] px-2 text-[var(--color-warning)]"
-            onClick={() => onReconnect(remote.name)}
+            className="h-7 w-7 p-0 text-[var(--text-tertiary)] hover:text-[var(--color-destructive)]"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            title="Remove"
           >
-            <RefreshCw className="h-3 w-3 mr-1" />
-            Reconnect
+            {deleteMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
           </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 text-[var(--text-tertiary)] hover:text-[var(--color-destructive)]"
-          onClick={handleDelete}
-          disabled={deleteMutation.isPending}
-          title="Remove"
-        >
-          {deleteMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
-        </Button>
+        </div>
       </div>
+
+      {expanded && remote.complete && (
+        <div className="border-t border-[var(--border-default)] bg-[var(--surface-primary)] px-4 py-3 space-y-2">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Create a folder on{" "}
+            <code className="text-[var(--text-primary)]">{remote.name}:</code>
+          </p>
+          <div className="flex items-stretch gap-2">
+            <input
+              type="text"
+              value={folderPath}
+              onChange={(e) => {
+                setFolderPath(e.target.value);
+                setLastCreated(null);
+                setErrorMsg(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !pathError && !mkdirMutation.isPending) {
+                  e.preventDefault();
+                  handleCreate();
+                }
+              }}
+              placeholder="e.g. suzume or projects/suzume"
+              className="flex-1 h-8 rounded-lg border border-[var(--border-default)] bg-[var(--surface-primary)] px-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/40 focus:border-[var(--brand-primary)] font-mono"
+            />
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleCreate}
+              disabled={
+                !folderPath.trim() ||
+                !!pathError ||
+                mkdirMutation.isPending
+              }
+            >
+              {mkdirMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                  Creating…
+                </>
+              ) : (
+                "Create"
+              )}
+            </Button>
+          </div>
+          {pathError && !errorMsg && !lastCreated && (
+            <p className="text-[11px] text-[var(--color-destructive)]">{pathError}</p>
+          )}
+          {errorMsg && (
+            <p className="text-[11px] text-[var(--color-destructive)] whitespace-pre-wrap">
+              {errorMsg}
+            </p>
+          )}
+          {lastCreated && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] text-emerald-500 flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                Created <code>{remote.name}:{lastCreated}</code>
+              </p>
+              <button
+                type="button"
+                className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] underline"
+                onClick={handleCreateAnother}
+              >
+                Create another
+              </button>
+            </div>
+          )}
+
+          <div className="pt-2 mt-1 border-t border-[var(--border-default)] space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Folders on {remote.name}
+              </p>
+              <button
+                type="button"
+                className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => folders.refetch()}
+                disabled={folders.isFetching}
+                title="Refresh"
+              >
+                {folders.isFetching ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+              </button>
+            </div>
+            {folders.isLoading && (
+              <p className="text-[11px] text-[var(--text-tertiary)]">Loading…</p>
+            )}
+            {folders.error && (
+              <p className="text-[11px] text-[var(--color-destructive)]">
+                {folders.error instanceof Error ? folders.error.message : "Failed to load folders."}
+              </p>
+            )}
+            {!folders.isLoading && !folders.error && (folders.data?.folders.length ?? 0) === 0 && (
+              <p className="text-[11px] text-[var(--text-tertiary)] italic">
+                No folders yet. Create one above.
+              </p>
+            )}
+            {folders.data && folders.data.folders.length > 0 && (
+              <ul className="space-y-1">
+                {folders.data.folders.map((f) => (
+                  <FolderItem
+                    key={f.name}
+                    remoteName={remote.name}
+                    folderName={f.name}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -305,6 +667,9 @@ function AddRemoteFlow({
           <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
             Authorize Google Drive
           </h3>
+          <p className="text-[11px] text-[var(--text-tertiary)]">
+            Google will only ask permission to access files this app creates (drive.file scope).
+          </p>
           <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-secondary)] p-4 space-y-3">
             <Button
               className="w-full"
@@ -335,6 +700,9 @@ function AddRemoteFlow({
         <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
           Authorize Google Drive
         </h3>
+        <p className="text-[11px] text-[var(--text-tertiary)]">
+          Google will only ask permission to access files this app creates (drive.file scope).
+        </p>
 
         <ol className="space-y-3">
           {/* Step 1 */}

@@ -310,6 +310,10 @@ export const API = {
     SESSION: (id: string) => `/api/connectors/gdrive/sessions/${id}` as const,
     CANCEL_SESSION: (id: string) => `/api/connectors/gdrive/sessions/${id}/cancel` as const,
     SUBMIT_CODE: (id: string) => `/api/connectors/gdrive/sessions/${id}/submit` as const,
+    MKDIR: (name: string) => `/api/connectors/gdrive/remotes/${encodeURIComponent(name)}/mkdir` as const,
+    RMDIR: (name: string) => `/api/connectors/gdrive/remotes/${encodeURIComponent(name)}/rmdir` as const,
+    FOLDERS: (name: string) => `/api/connectors/gdrive/remotes/${encodeURIComponent(name)}/folders` as const,
+    UPLOAD: (name: string) => `/api/connectors/gdrive/remotes/${encodeURIComponent(name)}/upload` as const,
   },
   ONEDRIVE: {
     REMOTES: "/api/connectors/onedrive/remotes",
@@ -324,6 +328,9 @@ export const API = {
     TOKEN: "/api/connectors/github/token",
     DISCONNECT: "/api/connectors/github/disconnect",
     RECONNECT: "/api/connectors/github/reconnect",
+    CLI_START: "/api/connectors/github/cli/start",
+    CLI_POLL: "/api/connectors/github/cli/poll",
+    CLI_CANCEL: "/api/connectors/github/cli/cancel",
   },
   VERCEL: {
     TOKEN: "/api/connectors/vercel/token",
