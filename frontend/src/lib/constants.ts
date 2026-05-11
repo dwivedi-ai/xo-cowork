@@ -177,8 +177,22 @@ export const API = {
     EXPORT_PDF: "/api/artifacts/export-pdf",
   },
   SECRETS: {
-    ENV: "/api/secrets/env",
-    ENV_KEYS: "/api/secrets/env/keys",
+    // BFF curated routes (see xo-cowork-api/docs/bff-endpoints-design.md §9.2).
+    LIST: "/api/secrets",
+    REVEAL: (key: string) => `/api/secrets/${encodeURIComponent(key)}/reveal` as const,
+    ITEM: (key: string) => `/api/secrets/${encodeURIComponent(key)}` as const,
+  },
+  PROJECTS: {
+    // BFF list endpoint (see xo-cowork-api/docs/bff-endpoints-design.md §9.1).
+    LIST: "/api/xo-projects",
+    // BFF tree endpoint (§9.3). Filters .xo, .git, dotfiles everywhere
+    // and canonical agent files at the project root.
+    TREE: (id: string, relativePath?: string) => {
+      const base = `/api/xo-projects/${encodeURIComponent(id)}/tree`;
+      return relativePath
+        ? `${base}?relative_path=${encodeURIComponent(relativePath)}`
+        : base;
+    },
   },
   USAGE: "/api/usage",
   CONFIG: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, ChevronDown, Monitor } from "lucide-react";
@@ -32,17 +32,17 @@ interface DirEntry {
   path: string;
 }
 
-interface ListDirectoryResponse {
-  path: string;
-  parent: string | null;
-  dirs: DirEntry[];
-  files: DirEntry[];
+interface ProjectItem {
+  id: string;
+  display_name: string;
+  description: string | null;
+  created_at: string | null;
+  unscaffolded: boolean;
 }
 
-const SYSTEM_DIRS = new Set(["agents", "memory", "state", "projects"]);
-
-function isUserProject(entry: DirEntry): boolean {
-  return !entry.name.startsWith(".") && !SYSTEM_DIRS.has(entry.name);
+interface ListProjectsResponse {
+  items: ProjectItem[];
+  total: number;
 }
 
 function getDisplayName(path: string | null | undefined, workspaceRoot: string): string | null {
@@ -67,13 +67,19 @@ export function WorkspaceToggle({ sessionId, directory, isIndexing }: WorkspaceT
   const currentPath = sessionId ? directory : globalWorkspace;
   const displayName = getDisplayName(currentPath, workspaceRoot);
 
-  // Load user projects from workspace
+  // Load user projects from workspace. Pre-filtered by the BFF
+  // (.xo internals and system leaves are stripped server-side).
+  // TODO: drop the workspaceRoot-based path mapping once
+  // PATCH /api/sessions/{id}/directory accepts a project id.
   const loadProjects = useCallback(async () => {
     try {
-      const res = await api.post<ListDirectoryResponse>(API.FILES.LIST_DIRECTORY, {
-        path: workspaceRoot,
-      });
-      setProjects(res.dirs.filter(isUserProject));
+      const res = await api.get<ListProjectsResponse>(API.PROJECTS.LIST);
+      setProjects(
+        res.items.map((it) => ({
+          name: it.display_name,
+          path: `${workspaceRoot}/${it.id}`,
+        })),
+      );
     } catch {
       setProjects([]);
     } finally {

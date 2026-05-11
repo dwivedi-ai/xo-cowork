@@ -332,24 +332,27 @@ function ModelsStep({
   const qc = useQueryClient();
   const { setActiveProvider } = useSettingsStore();
 
-  // If OpenClaw's `.env` already has ANTHROPIC_API_KEY or OPENAI_API_KEY,
-  // let the user skip this step instead of forcing a re-entry.
-  // Reads only the keys (no plaintext values cross the wire) and is
-  // prefetched at OnboardingScreen mount, so the cache is hot by the
-  // time this step renders.
-  const { data: envKeysData } = useQuery({
-    queryKey: ["secrets-env-keys"],
-    queryFn: () => api.get<{ keys: string[] }>(API.SECRETS.ENV_KEYS),
+  // If OpenClaw's secrets store already has ANTHROPIC_API_KEY or
+  // OPENAI_API_KEY, let the user skip this step instead of forcing a
+  // re-entry. The BFF list endpoint returns is_set without sending
+  // raw values, so this stays safe. Prefetched at OnboardingScreen
+  // mount so the cache is hot by the time this step renders.
+  const { data: secretsData } = useQuery({
+    queryKey: ["secrets-list"],
+    queryFn: () =>
+      api.get<{ items: { key: string; is_set: boolean }[] }>(API.SECRETS.LIST),
     staleTime: 30_000,
   });
 
   const detectedEnvKeys = useMemo<("ANTHROPIC_API_KEY" | "OPENAI_API_KEY")[]>(() => {
-    const keys = envKeysData?.keys ?? [];
+    const setKeys = new Set(
+      (secretsData?.items ?? []).filter((it) => it.is_set).map((it) => it.key),
+    );
     const detected: ("ANTHROPIC_API_KEY" | "OPENAI_API_KEY")[] = [];
-    if (keys.includes("ANTHROPIC_API_KEY")) detected.push("ANTHROPIC_API_KEY");
-    if (keys.includes("OPENAI_API_KEY")) detected.push("OPENAI_API_KEY");
+    if (setKeys.has("ANTHROPIC_API_KEY")) detected.push("ANTHROPIC_API_KEY");
+    if (setKeys.has("OPENAI_API_KEY")) detected.push("OPENAI_API_KEY");
     return detected;
-  }, [envKeysData]);
+  }, [secretsData]);
 
   const [selected, setSelected] = useState<ModelProvider>("anthropic");
 
@@ -519,12 +522,7 @@ const saveEnvVar = async () => {
     setEnvSaving(true);
     setEnvError(null);
     try {
-      const existing = await api.get<{ entries: { key: string; value: string }[] }>(API.SECRETS.ENV);
-      const entries = [
-        ...existing.entries.filter((e) => e.key !== envKey.trim()),
-        { key: envKey.trim(), value: envValue.trim() },
-      ];
-      await api.put(API.SECRETS.ENV, { entries });
+      await api.patch(API.SECRETS.ITEM(envKey.trim()), { value: envValue.trim() });
       setEnvSaved(true);
       setEnvKey("");
       setEnvValue("");
@@ -1213,8 +1211,9 @@ export function OnboardingScreen() {
   // appears with no perceptible delay. ModelsStep reads from this same
   // cached query.
   useQuery({
-    queryKey: ["secrets-env-keys"],
-    queryFn: () => api.get<{ keys: string[] }>(API.SECRETS.ENV_KEYS),
+    queryKey: ["secrets-list"],
+    queryFn: () =>
+      api.get<{ items: { key: string; is_set: boolean }[] }>(API.SECRETS.LIST),
     staleTime: 30_000,
   });
 
